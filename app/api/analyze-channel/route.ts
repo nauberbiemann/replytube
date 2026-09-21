@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
+import { validateAccess } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = validateAccess(req);
+    if (!auth.authorized) {
+      return NextResponse.json(
+        { error: 'Acesso bloqueado: senha incorreta ou não fornecida.' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { channelDescription } = body;
 

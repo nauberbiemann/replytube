@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Youtube, RefreshCw, Moon, Sun, Sparkles } from 'lucide-react';
+import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock } from 'lucide-react';
 
 interface HeaderProps {
   onResetCycle: () => void;
+  hasPassword?: boolean;
+  onLock?: () => void;
 }
 
-export function Header({ onResetCycle }: HeaderProps) {
+export function Header({ onResetCycle, hasPassword, onLock }: HeaderProps) {
   const [isDark, setIsDark] = useState<boolean>(true);
   const [mounted, setMounted] = useState(false);
 
@@ -49,7 +51,7 @@ export function Header({ onResetCycle }: HeaderProps) {
                 className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 cursor-help"
               >
                 <Sparkles className="h-2.5 w-2.5" />
-                gpt-4o-mini (2.5M tokens/dia grátis)
+                gpt-4o-mini
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -59,6 +61,17 @@ export function Header({ onResetCycle }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {hasPassword && (
+            <button
+              type="button"
+              onClick={onLock}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-muted/60 text-emerald-500 transition hover:bg-muted"
+              title="Acesso protegido por senha (clique para bloquear)"
+            >
+              <Lock className="h-4 w-4" />
+            </button>
+          )}
+
           {mounted && (
             <button
               type="button"

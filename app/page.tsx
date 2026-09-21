@@ -13,6 +13,7 @@ import { ChannelManager } from '@/components/ChannelManager';
 import { VideoReference } from '@/components/VideoReference';
 import { CommentUploader } from '@/components/CommentUploader';
 import { SessionThread } from '@/components/SessionThread';
+import { PasswordModal } from '@/components/PasswordModal';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 interface Toast {
@@ -22,6 +23,11 @@ interface Toast {
 }
 
 export default function DashboardPage() {
+  // Autenticação e Proteção por Senha
+  const [appPassword, setAppPassword] = useState<string>('');
+  const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [requiresPassword, setRequiresPassword] = useState<boolean>(false);
+
   // Canais e Contexto
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string>('');
@@ -49,6 +55,7 @@ export default function DashboardPage() {
   const generatingRef = useRef<boolean>(false);
   const videoTitleRef = useRef<string>('');
   const videoImageRef = useRef<string>('');
+  const appPasswordRef = useRef<string>('');
 
   // Manter refs atualizadas para os event listeners
   useEffect(() => {
@@ -64,6 +71,10 @@ export default function DashboardPage() {
     videoImageRef.current = videoImage;
   }, [videoTitle, videoImage]);
 
+  useEffect(() => {
+    appPasswordRef.current = appPassword;
+  }, [appPassword]);
+
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = crypto.randomUUID();
     setToasts((prev) => [...prev, { id, type, message }]);
@@ -74,6 +85,56 @@ export default function DashboardPage() {
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Verificar proteção por senha na inicialização
+  useEffect(() => {
+    const checkPasswordRequirement = async () => {
+      const savedPass = localStorage.getItem('replytube_access_password') || '';
+      try {
+        const res = await fetch('/api/verify-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: savedPass }),
+        });
+        const data = await res.json();
+        setRequiresPassword(data.requiresPassword);
+        if (data.requiresPassword) {
+          if (data.valid) {
+            setAppPassword(savedPass);
+            setIsLocked(false);
+          } else {
+            setIsLocked(true);
+          }
+        } else {
+          setIsLocked(false);
+        }
+      } catch (err) {
+        console.error('Erro ao verificar senha:', err);
+      }
+    };
+
+    checkPasswordRequirement();
+  }, []);
+
+  const handleUnlockSuccess = (pass: string) => {
+    localStorage.setItem('replytube_access_password', pass);
+    setAppPassword(pass);
+    setIsLocked(false);
+    addToast('Acesso desbloqueado com sucesso!', 'success');
+
+    // Se já havia canal carregado, ativa-o
+    if (channels.length > 0 && selectedChannelId) {
+      const ch = channels.find((c) => c.id === selectedChannelId);
+      if (ch) analyzeChannel(ch.description, pass);
+    }
+  };
+
+  const handleLockManual = () => {
+    localStorage.removeItem('replytube_access_password');
+    setAppPassword('');
+    setIsLocked(true);
+    addToast('Aplicativo bloqueado.', 'info');
   };
 
   // Carregar canais do localStorage ao iniciar
@@ -87,14 +148,23 @@ export default function DashboardPage() {
   }, []);
 
   // Analisar contexto do canal selecionado
-  const analyzeChannel = async (description: string) => {
+  const analyzeChannel = async (description: string, passOverride?: string) => {
     setContextLoading(true);
     try {
+      const pass = passOverride !== undefined ? passOverride : appPasswordRef.current;
       const res = await fetch('/api/analyze-channel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-app-password': pass,
+        },
         body: JSON.stringify({ channelDescription: description }),
       });
+
+      if (res.status === 401) {
+        setIsLocked(true);
+        throw new Error('Acesso bloqueado: senha incorreta ou necessária.');
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -180,7 +250,10 @@ export default function DashboardPage() {
       try {
         const res = await fetch('/api/generate-reply', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-app-password': appPasswordRef.current,
+          },
           body: JSON.stringify({
             context: currentContext,
             commentImageDataUrl: imageToSend,
@@ -190,6 +263,11 @@ export default function DashboardPage() {
           }),
           signal: controller.signal,
         });
+
+        if (res.status === 401) {
+          setIsLocked(true);
+          throw new Error('Acesso bloqueado: senha incorreta ou necessária.');
+        }
 
         const data = await res.json();
         if (!res.ok) {
@@ -244,7 +322,10 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/refine-reply', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-app-password': appPasswordRef.current,
+        },
         body: JSON.stringify({
           commentText: item.commentText,
           nickname: item.nickname,
@@ -254,6 +335,11 @@ export default function DashboardPage() {
           context: selectedChannelRef.current,
         }),
       });
+
+      if (res.status === 401) {
+        setIsLocked(true);
+        throw new Error('Acesso bloqueado: senha incorreta ou necessária.');
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -287,7 +373,9 @@ export default function DashboardPage() {
   // Global Paste Listener (Ctrl+V em qualquer lugar da tela)
   useEffect(() => {
     const handleGlobalPaste = (e: ClipboardEvent) => {
-      // Ignorar se estiver digitando em um input ou textarea
+      // Ignorar se a tela estiver bloqueada por senha
+      if (isLocked) return;
+
       const activeEl = document.activeElement;
       if (
         activeEl?.tagName === 'INPUT' ||
@@ -325,7 +413,6 @@ export default function DashboardPage() {
       reader.onload = () => {
         const dataUrl = String(reader.result || '');
         setCommentImage(dataUrl);
-        // Disparar geração automática com a nova imagem colada
         handleGenerateReply(dataUrl, '');
       };
       reader.readAsDataURL(file);
@@ -333,11 +420,18 @@ export default function DashboardPage() {
 
     window.addEventListener('paste', handleGlobalPaste);
     return () => window.removeEventListener('paste', handleGlobalPaste);
-  }, [handleGenerateReply]);
+  }, [handleGenerateReply, isLocked]);
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      <Header onResetCycle={handleResetCycle} />
+      <Header
+        onResetCycle={handleResetCycle}
+        hasPassword={requiresPassword}
+        onLock={handleLockManual}
+      />
+
+      {/* Modal de Bloqueio por Senha */}
+      <PasswordModal isOpen={isLocked} onSuccess={handleUnlockSuccess} />
 
       {/* Floating Toasts */}
       <div className="fixed top-16 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
