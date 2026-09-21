@@ -124,6 +124,57 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
 
           {/* Área de Refinamento */}
           <div className="border-t border-border pt-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mr-1">
+                Ajuste rápido:
+              </span>
+              <button
+                type="button"
+                disabled={refining}
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(item.id, 'Deixe a resposta bem mais curta e direta, com no máximo 2 frases.');
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                ⚡ Mais Curto
+              </button>
+              <button
+                type="button"
+                disabled={refining}
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(item.id, 'Deixe a resposta bem mais espontânea, informal e descontraída, como um criador do YouTube.');
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                🔥 Mais Descontraído
+              </button>
+              <button
+                type="button"
+                disabled={refining}
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(item.id, 'Aprofunde com um dado ou contraponto técnico mais detalhado sobre o assunto do vídeo.');
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                🎯 Mais Técnico
+              </button>
+            </div>
+
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <textarea
                 value={instruction}

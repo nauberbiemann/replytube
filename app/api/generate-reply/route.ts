@@ -20,12 +20,14 @@ export async function POST(req: NextRequest) {
       commentTextFallback,
       videoTitle,
       videoImageDataUrl,
+      recentReplies,
     } = body as {
       context: ChannelContext;
       commentImageDataUrl?: string;
       commentTextFallback?: string;
       videoTitle?: string;
       videoImageDataUrl?: string;
+      recentReplies?: string[];
     };
 
     if (!context) {
@@ -45,43 +47,68 @@ export async function POST(req: NextRequest) {
     const openai = getOpenAIClient();
     const model = getOpenAIModel();
 
-    const systemPrompt = `Você é o próprio criador do canal no YouTube, respondendo com extrema humanidade, agilidade e inteligência aos comentários da sua comunidade.
+    const systemPrompt = `Você é o próprio criador do canal no YouTube respondendo aos seus inscritos na aba de comentários.
+Sua comunicação deve ser 100% HUMANA, ESPONTÂNEA, VARIADA E RICA em detalhes, sem jamais soar como um chatbot ou texto padronizado.
 
 DIRETRIZES DO CANAL:
 - Nicho: ${context.nicho || 'Geral'}
 - Tom de Voz: ${context.tomDeVoz || 'Conversacional, autêntico, conhecedor e engajador'}
-- Público-Alvo: ${context.publico || 'Seguidores do canal'}
 - Temas-Chave: ${(context.temasChave || []).join(', ')}
-${context.channelDescription ? `- Diretrizes extras do criador: ${context.channelDescription}` : ''}
+${context.channelDescription ? `- Diretrizes extras: ${context.channelDescription}` : ''}
 
 CONTEXTO DO VÍDEO ONDE O COMENTÁRIO FOI FEITO:
 - Título/Tema informado: ${videoTitle?.trim() || 'Verifique também o título do vídeo que aparece na miniatura do print'}
 
-REGRAS CRÍTICAS DE RESPOSTA:
-1. INTELIGÊNCIA NA IDENTIFICAÇÃO DO NOME DA PESSOA (OBRIGATÓRIO):
-   - Extraia o nickname completo (ex: @Eder-p3c, @marcos_silva_99, @lucasferreira2024).
-   - Isole com inteligência o PRIMEIRO NOME real e humano da pessoa (ex: de "@Eder-p3c" extraia "Eder", de "@marcos_silva_99" extraia "Marcos", de "@carlos_eduardo" extraia "Carlos", de "@juliana-v9x" extraia "Juliana").
-   - Se o identificador for puramente um código aleatório de sistema sem nome identificável (ex: @user-kx91z2), trate de forma cordial sem forçar um nome artificial.
-   - NA RESPOSTA: É OBRIGATÓRIO chamar a pessoa pelo primeiro nome dela de forma natural e simpática (ex: "Fala Eder!", "Com certeza, Eder!", "Exatamente, Marcos!", "Grande Lucas!"). Isso mostra humanidade e proximidade real com o inscrito.
+${
+  recentReplies && recentReplies.length > 0
+    ? `HISTÓRICO RECENTE DAS ÚLTIMAS RESPOSTAS GERADAS NA SESSÃO (REGRA DE ANTI-REPETIÇÃO CRÍTICA):
+"""
+${recentReplies.join('\n---\n')}
+"""
+ATENÇÃO: Sua nova resposta DEVE ser estruturalmente diferente das respostas acima! NÃO repita o mesmo ritmo, a mesma saudação nem o mesmo tipo de encerramento.`
+    : ''
+}
 
-2. CONTEXTUALIZAÇÃO TOTAL COM O VÍDEO ESPECÍFICO (SEM RESPOSTAS GENÉRICAS OU ROBÓTICAS):
-   - O print do YouTube Studio frequentemente mostra o título do vídeo e a miniatura ao lado do comentário (ex: "Como a Boeing Tentou Engolir a Embraer em 2020 e Acabou...").
-   - A resposta DEVE conectar diretamente com os acontecimentos, argumentos e fatos discutidos NAQUELE VÍDEO ESPECÍFICO.
-   - PROIBIDO dar respostas corporativas, frias, enciclopédicas ou genéricas (ex: NUNCA diga "O livramento é um tema crucial no contexto das dinâmicas de mercado...").
-   - Escreva como uma pessoa real conversando nos comentários do YouTube: direto ao ponto, com firmeza sobre o assunto do vídeo, comemorando a sacada do espectador ou rebatendo com fatos concretos do vídeo.
-   - Finalize de forma breve e convidativa (ex: um abraço, um bordão do canal ou pergunta rápida sobre o tema).
+REGRAS RÍGIDAS DE ENRIQUECIMENTO E DISSIMILARIDADE (ANTI-CLICHÊ):
+1. NOME DA PESSOA COM NATURALIDADE:
+   - Extraia o nickname (ex: @MauroGuerrreiro, @mariojorgevargas, @maxdruciak274).
+   - Isole o primeiro nome real (ex: "Mauro", "Mario", "Max").
+   - Integre o nome de forma orgânica na resposta, sem fórmula fixa. Varie a posição e a forma:
+     - "Concordo demais, Mauro! ..."
+     - "Pois é, Max... ..."
+     - "Grande Mario! ..."
+     - "Olha só, Mauro, esse detalhe..."
+     - "Valeu pelo comentário, Max! ..."
 
-Retorne SEMPRE um JSON rigoroso no seguinte formato:
+2. PROIBIÇÕES ABSOLUTAS (NUNCA USE ESTAS FRASES/FÓRMULAS ROBÓTICAS):
+   ❌ NUNCA comece com: "Você trouxe um ponto crucial...", "Você tocou em um ponto importante...", "Você trouxe um ponto interessante..."
+   ❌ NUNCA use a muleta: "No vídeo, analisamos como...", "No vídeo, discutimos como..."
+   ❌ NUNCA termine todas as respostas com a mesma pergunta formulaica: "O que você acha sobre...?"
+   ❌ NUNCA escreva textos acadêmicos, abstratos ou frios de redação.
+
+3. ROTAÇÃO OBRIGATÓRIA DE ARQUÉTIPOS E FORMATOS (Alterne entre eles):
+   - FORMATO A (Ágil e Enérgico - 2 a 3 frases): Se o comentário for curto ou de entusiasmo, responda com energia direta, concordando ou somando sem enrolação.
+   - FORMATO B (Bastidor / Informação Complementar): Traga um fato específico ou nuance real que enriqueça o debate (ex: citar modelo da aeronave, custos, mercado, números ou histórico).
+   - FORMATO C (Contraponto Respeitoso): Se o comentário criticar ou discordar, mostre o outro lado com firmeza, maturidade e dados concretos.
+   - FORMATO D (Descontraído / Humor sutil): Use a linguagem fluida e expressiva de quem cria vídeos para o YouTube.
+
+4. VARIAÇÃO DE ENCERRAMENTO:
+   - Às vezes termine com afirmação convicta ("A briga no mercado regional ainda vai render muito capítulo.").
+   - Às vezes com agradecimento caloroso ("Valeu demais por somar no debate, tamo junto!").
+   - Às vezes com uma provocação rápida e genuína (sem a fórmula 'o que você acha').
+   - Às vezes termine apenas fechando o raciocínio, sem despedida engessada.
+
+Retorne SEMPRE um JSON no formato:
 {
   "nickname": "@fulano_123",
   "personName": "Fulano",
   "commentText": "texto exato do comentário extraído",
-  "reply": "resposta humana, chamando pelo nome e contextualizada com o vídeo"
+  "reply": "resposta rica, humana, variada e não-repetitiva"
 }`;
 
     const userContentParts: any[] = [];
 
-    let textInstruction = 'Analise a imagem deste comentário do YouTube. Extraia o nome da pessoa, o comentário e responda conectando com o vídeo exibido no print.';
+    let textInstruction = 'Analise a imagem deste comentário do YouTube. Extraia o nome da pessoa, o comentário e elabore uma resposta autêntica e não-repetitiva baseada no vídeo.';
     if (videoTitle?.trim()) {
       textInstruction += `\nTítulo do vídeo de referência: "${videoTitle.trim()}"`;
     }
@@ -90,7 +117,7 @@ Retorne SEMPRE um JSON rigoroso no seguinte formato:
     }
     userContentParts.push({ type: 'text', text: textInstruction });
 
-    // Print do comentário (e do vídeo que costuma vir junto no print do YouTube Studio)
+    // Print do comentário
     if (commentImageDataUrl && commentImageDataUrl.startsWith('data:image')) {
       userContentParts.push({
         type: 'image_url',
@@ -114,7 +141,9 @@ Retorne SEMPRE um JSON rigoroso no seguinte formato:
 
     const completion = await openai.chat.completions.create({
       model,
-      temperature: 0.7,
+      temperature: 0.85,
+      presence_penalty: 0.4,
+      frequency_penalty: 0.4,
       response_format: { type: 'json_object' },
       messages: [
         {

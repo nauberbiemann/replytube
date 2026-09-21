@@ -260,6 +260,7 @@ export default function DashboardPage() {
             commentTextFallback: textToSend,
             videoTitle: videoTitleRef.current,
             videoImageDataUrl: videoImageRef.current,
+            recentReplies: threadItems.slice(0, 4).map((t) => t.reply),
           }),
           signal: controller.signal,
         });
