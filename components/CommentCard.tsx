@@ -134,7 +134,7 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
                 onClick={async () => {
                   setRefining(true);
                   try {
-                    await onRefine(item.id, 'Deixe a resposta bem mais curta e direta, com no máximo 2 frases.');
+                    await onRefine(item.id, 'Deixe super curto, no máximo 1 ou 2 frases certeiras. PROIBIDO começar com "Fala [Nome]!" nem com saudações prontas. Vá direto ao ponto levantado.');
                   } finally {
                     setRefining(false);
                   }
@@ -149,14 +149,14 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
                 onClick={async () => {
                   setRefining(true);
                   try {
-                    await onRefine(item.id, 'Deixe a resposta bem mais espontânea, informal e descontraída, como um criador do YouTube.');
+                    await onRefine(item.id, 'Rebata o comentário com firmeza, dados reais do vídeo e um toque de ironia/humor inteligente de quem entende do assunto, sem papo corporativo de assessor de imprensa.');
                   } finally {
                     setRefining(false);
                   }
                 }}
                 className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
               >
-                🔥 Mais Descontraído
+                🔥 Rebater / Firme
               </button>
               <button
                 type="button"
@@ -164,14 +164,14 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
                 onClick={async () => {
                   setRefining(true);
                   try {
-                    await onRefine(item.id, 'Aprofunde com um dado ou contraponto técnico mais detalhado sobre o assunto do vídeo.');
+                    await onRefine(item.id, 'Deixe bem solto, espontâneo e descontraído, com linguagem pura de criador do YouTube, sem clichês de ChatGPT.');
                   } finally {
                     setRefining(false);
                   }
                 }}
                 className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
               >
-                🎯 Mais Técnico
+                💬 Mais Informal
               </button>
             </div>
 

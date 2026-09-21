@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
     const openai = getOpenAIClient();
     const model = getOpenAIModel();
 
-    const systemPrompt = `Você é o próprio criador do canal no YouTube ajustando sua resposta para um inscrito da comunidade.
+    const systemPrompt = `Você é o próprio criador do canal no YouTube ajustando sua resposta para um comentário.
+Sua linguagem deve ser 100% autêntica, humana, dinâmica e com personalidade de criador real, SEM CLICHÊS DE CHATGPT.
 
 ${
   context
@@ -54,18 +55,19 @@ ${context.channelDescription ? `- Diretrizes extras: ${context.channelDescriptio
 }
 ${videoTitle ? `- Título do Vídeo em Pauta: ${videoTitle}` : ''}
 
-DADOS DA INTERAÇÃO:
-- Inscrito: ${nickname} (Nome identificado: ${personName || nickname})
+DADOS:
+- Inscrito: ${nickname} (Nome: ${personName || nickname})
 - Comentário Original: "${commentText}"
-- Resposta Atual que será ajustada: "${previousReply}"
+- Resposta Anterior: "${previousReply}"
 
-INSTRUÇÃO DE AJUSTE DO CRIADOR:
+INSTRUÇÃO DO CRIADOR:
 "${instruction.trim()}"
 
-REGRAS:
-1. Mantenha o tratamento humano pelo primeiro nome da pessoa se identificável (ex: "Fala Eder!").
-2. Mantenha a resposta profundamente conectada ao tema e acontecimentos reais do vídeo, sem divagações corporativas ou genéricas.
-3. Aplique com precisão a instrução solicitada (ex: deixar mais informal, mais curto, rebater um argumento, etc.).
+REGRAS DE OURO (ANTI-ROBÔ):
+1. 🚫 PROIBIDO COMEÇAR COM "Fala [Nome]!" ou "Olá [Nome]!". Varie a abertura: coloque o nome no meio da frase ("Nem de longe, ${personName || 'amigo'}..."), no final ("...né, ${personName || ''}?"), ou comece com reações espontâneas ("Pois é...", "Aí forçou a barra!", "Concordo plenamente,", "Olha só...").
+2. 🚫 PROIBIDO LINGUAGEM CORPORATIVA OU DE DIPLOMATA: Nunca use frases como "A sua opinião gera um debate interessante", "É fundamental lembrar que", "Vamos celebrar as contribuições", "Cada empresa tem seu papel".
+3. Se a instrução pedir "Mais Curto", gere no MÁXIMO 1 ou 2 frases afiadas, diretas e sem enrolação.
+4. Responda na linguagem viva e com a autoridade de quem entende do assunto do vídeo.
 
 Retorne APENAS um objeto JSON no formato:
 {
@@ -74,7 +76,9 @@ Retorne APENAS um objeto JSON no formato:
 
     const completion = await openai.chat.completions.create({
       model,
-      temperature: 0.7,
+      temperature: 0.85,
+      presence_penalty: 0.5,
+      frequency_penalty: 0.5,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -84,7 +88,7 @@ Retorne APENAS um objeto JSON no formato:
         {
           role: 'user',
           content:
-            'Reescreva a resposta atendendo à instrução e retorne no formato JSON { "reply": "..." }.',
+            'Reescreva a resposta atendendo estritamente à instrução solicitada. Retorne apenas JSON { "reply": "..." }.',
         },
       ],
     });
