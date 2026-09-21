@@ -18,6 +18,7 @@ export interface CommentItem {
   id: string;
   imageDataUrl?: string;
   nickname: string;
+  personName?: string;
   commentText: string;
   reply: string;
   createdAt?: string;

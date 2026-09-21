@@ -45,43 +45,52 @@ export async function POST(req: NextRequest) {
     const openai = getOpenAIClient();
     const model = getOpenAIModel();
 
-    const systemPrompt = `Você é o próprio criador do canal no YouTube e gerencia pessoalmente as respostas da comunidade.
-Diretrizes do Canal:
+    const systemPrompt = `Você é o próprio criador do canal no YouTube, respondendo com extrema humanidade, agilidade e inteligência aos comentários da sua comunidade.
+
+DIRETRIZES DO CANAL:
 - Nicho: ${context.nicho || 'Geral'}
-- Tom de Voz: ${context.tomDeVoz || 'Educado, natural e engajador'}
+- Tom de Voz: ${context.tomDeVoz || 'Conversacional, autêntico, conhecedor e engajador'}
 - Público-Alvo: ${context.publico || 'Seguidores do canal'}
 - Temas-Chave: ${(context.temasChave || []).join(', ')}
-${context.channelDescription ? `- Diretrizes extras: ${context.channelDescription}` : ''}
+${context.channelDescription ? `- Diretrizes extras do criador: ${context.channelDescription}` : ''}
 
-Contexto do Vídeo que recebeu o comentário:
-- Título/Tema do vídeo: ${videoTitle?.trim() || 'Vídeo do canal'}
+CONTEXTO DO VÍDEO ONDE O COMENTÁRIO FOI FEITO:
+- Título/Tema informado: ${videoTitle?.trim() || 'Verifique também o título do vídeo que aparece na miniatura do print'}
 
-Sua tarefa:
-1. Extrair do print do YouTube:
-   - "nickname": O @ ou nome do usuário que comentou (sem o símbolo @ no campo, apenas o nome). Se ilegível, use "Espectador".
-   - "commentText": O texto exato da mensagem deixada pelo usuário.
-2. Escrever a "reply":
-   - Uma resposta autêntica, acolhedora e inteligente como o dono do canal responderia.
-   - Conecte com o assunto do vídeo e com a essência do canal.
-   - Seja natural e direto. Evite introduções clichês e artificiais como "Olá amigo", "Obrigado por comentar", "Muito interessante sua colocação". Vá direto ao ponto, comemore o ponto ou debata respeitosamente caso haja discordância.
-   - Use pontuação e parágrafos curtos se necessário para facilitar a leitura no YouTube.
+REGRAS CRÍTICAS DE RESPOSTA:
+1. INTELIGÊNCIA NA IDENTIFICAÇÃO DO NOME DA PESSOA (OBRIGATÓRIO):
+   - Extraia o nickname completo (ex: @Eder-p3c, @marcos_silva_99, @lucasferreira2024).
+   - Isole com inteligência o PRIMEIRO NOME real e humano da pessoa (ex: de "@Eder-p3c" extraia "Eder", de "@marcos_silva_99" extraia "Marcos", de "@carlos_eduardo" extraia "Carlos", de "@juliana-v9x" extraia "Juliana").
+   - Se o identificador for puramente um código aleatório de sistema sem nome identificável (ex: @user-kx91z2), trate de forma cordial sem forçar um nome artificial.
+   - NA RESPOSTA: É OBRIGATÓRIO chamar a pessoa pelo primeiro nome dela de forma natural e simpática (ex: "Fala Eder!", "Com certeza, Eder!", "Exatamente, Marcos!", "Grande Lucas!"). Isso mostra humanidade e proximidade real com o inscrito.
 
-Retorne SEMPRE um JSON válido no seguinte formato:
+2. CONTEXTUALIZAÇÃO TOTAL COM O VÍDEO ESPECÍFICO (SEM RESPOSTAS GENÉRICAS OU ROBÓTICAS):
+   - O print do YouTube Studio frequentemente mostra o título do vídeo e a miniatura ao lado do comentário (ex: "Como a Boeing Tentou Engolir a Embraer em 2020 e Acabou...").
+   - A resposta DEVE conectar diretamente com os acontecimentos, argumentos e fatos discutidos NAQUELE VÍDEO ESPECÍFICO.
+   - PROIBIDO dar respostas corporativas, frias, enciclopédicas ou genéricas (ex: NUNCA diga "O livramento é um tema crucial no contexto das dinâmicas de mercado...").
+   - Escreva como uma pessoa real conversando nos comentários do YouTube: direto ao ponto, com firmeza sobre o assunto do vídeo, comemorando a sacada do espectador ou rebatendo com fatos concretos do vídeo.
+   - Finalize de forma breve e convidativa (ex: um abraço, um bordão do canal ou pergunta rápida sobre o tema).
+
+Retorne SEMPRE um JSON rigoroso no seguinte formato:
 {
-  "nickname": "nome_ou_arroba",
-  "commentText": "texto do comentário extraído",
-  "reply": "resposta sugerida personalizada"
+  "nickname": "@fulano_123",
+  "personName": "Fulano",
+  "commentText": "texto exato do comentário extraído",
+  "reply": "resposta humana, chamando pelo nome e contextualizada com o vídeo"
 }`;
 
     const userContentParts: any[] = [];
 
-    let textInstruction = 'Analise este comentário e gere a melhor resposta no tom do canal.';
+    let textInstruction = 'Analise a imagem deste comentário do YouTube. Extraia o nome da pessoa, o comentário e responda conectando com o vídeo exibido no print.';
+    if (videoTitle?.trim()) {
+      textInstruction += `\nTítulo do vídeo de referência: "${videoTitle.trim()}"`;
+    }
     if (commentTextFallback?.trim()) {
-      textInstruction += `\nTexto digitado como apoio/fallback: """${commentTextFallback.trim()}"""`;
+      textInstruction += `\nTexto de apoio/fallback digitado: """${commentTextFallback.trim()}"""`;
     }
     userContentParts.push({ type: 'text', text: textInstruction });
 
-    // Print do comentário
+    // Print do comentário (e do vídeo que costuma vir junto no print do YouTube Studio)
     if (commentImageDataUrl && commentImageDataUrl.startsWith('data:image')) {
       userContentParts.push({
         type: 'image_url',
@@ -92,7 +101,7 @@ Retorne SEMPRE um JSON válido no seguinte formato:
       });
     }
 
-    // Print do vídeo se enviado
+    // Print adicional do vídeo se enviado
     if (videoImageDataUrl && videoImageDataUrl.startsWith('data:image')) {
       userContentParts.push({
         type: 'image_url',
@@ -139,6 +148,7 @@ Retorne SEMPRE um JSON válido no seguinte formato:
 
     return NextResponse.json({
       nickname: parsed.nickname || 'Espectador',
+      personName: parsed.personName || '',
       commentText: parsed.commentText || commentTextFallback || '',
       reply: parsed.reply || '',
     });

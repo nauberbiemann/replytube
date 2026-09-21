@@ -9,6 +9,7 @@ import {
   Check,
   Loader2,
   CornerDownLeft,
+  User,
 } from 'lucide-react';
 
 interface CommentCardProps {
@@ -50,8 +51,8 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm transition hover:border-border">
-      <div className="grid h-auto gap-0 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/60">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm transition hover:border-border/80">
+      <div className="grid h-auto gap-0 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
         {/* Lado Esquerdo: Comentário Original & Print */}
         <div className="bg-muted/20 p-4 space-y-2.5">
           <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -60,7 +61,7 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
           </div>
 
           {item.imageDataUrl && (
-            <div className="overflow-hidden rounded-lg border border-border/80 bg-background/50 p-1">
+            <div className="overflow-hidden rounded-lg border border-border bg-background/50 p-1">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={item.imageDataUrl}
@@ -71,8 +72,16 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
           )}
 
           <div>
-            <div className="text-xs font-bold text-foreground">
-              @{item.nickname.replace(/^@/, '')}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-foreground">
+                @{item.nickname.replace(/^@/, '')}
+              </span>
+              {item.personName && (
+                <span className="inline-flex items-center gap-1 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 border border-red-500/20">
+                  <User className="h-2.5 w-2.5" />
+                  {item.personName}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
               {item.commentText}
@@ -114,7 +123,7 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
           </div>
 
           {/* Área de Refinamento */}
-          <div className="border-t border-border/60 pt-3 space-y-2">
+          <div className="border-t border-border pt-3 space-y-2">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <textarea
                 value={instruction}

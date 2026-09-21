@@ -280,6 +280,7 @@ export default function DashboardPage() {
         const newItem: CommentItem = {
           id: crypto.randomUUID(),
           nickname: data.nickname,
+          personName: data.personName,
           commentText: data.commentText,
           reply: data.reply,
           imageDataUrl: imageToSend,
@@ -289,7 +290,8 @@ export default function DashboardPage() {
         setThreadItems((prev) => [newItem, ...prev]);
         setCommentImage('');
         setFallbackText('');
-        addToast(`Resposta gerada para @${data.nickname.replace(/^@/, '')}!`, 'success');
+        const displayName = data.personName || data.nickname.replace(/^@/, '');
+        addToast(`Resposta gerada para ${displayName}!`, 'success');
       } catch (err: any) {
         if (controller.signal.aborted) {
           addToast('Geração de resposta cancelada.', 'info');
@@ -329,6 +331,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           commentText: item.commentText,
           nickname: item.nickname,
+          personName: item.personName,
           previousReply: item.reply,
           instruction,
           videoTitle: videoTitleRef.current,
