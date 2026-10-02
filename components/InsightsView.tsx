@@ -17,6 +17,9 @@ import {
   SlidersHorizontal,
   Flame,
   CheckCircle2,
+  Tv,
+  Film,
+  Compass,
 } from 'lucide-react';
 
 interface InsightsViewProps {
@@ -30,9 +33,14 @@ export function InsightsView({
   channelContext,
   addToast,
 }: InsightsViewProps) {
-  const [inputMode, setInputMode] = useState<'url' | 'manual'>('url');
+  const [inputMode, setInputMode] = useState<'channel' | 'video' | 'manual'>('channel');
 
-  // URL mode state
+  // Channel mode state
+  const [channelUrl, setChannelUrl] = useState('');
+  const [viralCount, setViralCount] = useState<number>(3);
+  const [commentsPerVideo, setCommentsPerVideo] = useState<number>(40);
+
+  // Single Video mode state
   const [videoUrl, setVideoUrl] = useState('');
   const [maxResults, setMaxResults] = useState<number>(100);
 
@@ -78,7 +86,90 @@ export function InsightsView({
   const handleStartAnalysis = async () => {
     if (statusStep === 'fetching' || statusStep === 'analyzing') return;
 
-    if (inputMode === 'url') {
+    // 1. MODO CANAL INTEIRO (VÍDEOS MAIS VIRAIS)
+    if (inputMode === 'channel') {
+      if (!channelUrl.trim()) {
+        addToast('Insira o link ou @handle do canal (ex: @manualdomundo).', 'error');
+        return;
+      }
+
+      setStatusStep('fetching');
+      setStatusMessage('Localizando canal e identificando os vídeos mais virais...');
+
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (appPassword) headers['x-app-password'] = appPassword;
+
+        const fetchRes = await fetch('/api/insights/fetch-channel-viral', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            channelUrl: channelUrl.trim(),
+            viralCount,
+            commentsPerVideo,
+            apiKey: savedApiKey || undefined,
+          }),
+        });
+
+        const fetchData = await fetchRes.json();
+
+        if (!fetchRes.ok) {
+          if (fetchData.requiresApiKey) {
+            setIsApiKeyModalOpen(true);
+            addToast(fetchData.error || 'Configure sua chave da API do YouTube.', 'info');
+          } else {
+            addToast(fetchData.error || 'Falha ao escanear canal.', 'error');
+          }
+          setStatusStep('idle');
+          return;
+        }
+
+        const comments: string[] = fetchData.comments || [];
+        if (comments.length === 0) {
+          addToast('Nenhum comentário retornado dos vídeos virais deste canal.', 'error');
+          setStatusStep('idle');
+          return;
+        }
+
+        setStatusStep('analyzing');
+        setStatusMessage(
+          `Minerando ${comments.length} comentários dos ${fetchData.viralVideos?.length || 0} vídeos mais virais de "${fetchData.channelTitle}" com gpt-4o-mini...`
+        );
+
+        const analyzeRes = await fetch('/api/insights/analyze', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            comments,
+            videoTitle: `Vídeos Mais Virais de ${fetchData.channelTitle}`,
+            channelTitle: fetchData.channelTitle,
+            channelAvatar: fetchData.channelAvatar,
+            viralVideos: fetchData.viralVideos,
+            thumbnailUrl: fetchData.viralVideos?.[0]?.thumbnailUrl,
+            videoUrl: channelUrl.trim(),
+            customTopic: `Varredura dos ${fetchData.viralVideos?.length} vídeos mais vistos do canal`,
+          }),
+        });
+
+        const analyzeData = await analyzeRes.json();
+        if (!analyzeRes.ok || !analyzeData.result) {
+          addToast(analyzeData.error || 'Falha ao processar a análise com IA.', 'error');
+          setStatusStep('idle');
+          return;
+        }
+
+        setAnalysisResult(analyzeData.result);
+        localStorage.setItem('replytube_latest_insights', JSON.stringify(analyzeData.result));
+        setStatusStep('done');
+        addToast('Mina de Ouro do canal minerada com sucesso!', 'success');
+      } catch (err: any) {
+        console.error(err);
+        addToast(err?.message || 'Erro inesperado na análise do canal.', 'error');
+        setStatusStep('idle');
+      }
+    } 
+    // 2. MODO VÍDEO ÚNICO
+    else if (inputMode === 'video') {
       if (!videoUrl.trim()) {
         addToast('Insira a URL do vídeo do YouTube.', 'error');
         return;
@@ -154,8 +245,9 @@ export function InsightsView({
         addToast(err?.message || 'Erro inesperado na análise.', 'error');
         setStatusStep('idle');
       }
-    } else {
-      // Manual input mode
+    } 
+    // 3. MODO MANUAL
+    else {
       if (!manualComments.trim()) {
         addToast('Cole ao menos alguns comentários no campo de texto.', 'error');
         return;
@@ -274,7 +366,7 @@ export function InsightsView({
               </span>
             </div>
             <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
-              Analise qualquer vídeo do YouTube (de qualquer canal ou concorrente). Extraia sentimentos, dores reais dos espectadores, expectativas não atendidas e gere conceitos de novos vídeos com roteiros instantâneos.
+              Descubra o que o público ama, odeia e implora para ver. Analise canais inteiros pelos vídeos mais virais ou foque em vídeos específicos com inteligência artificial.
             </p>
           </div>
 
@@ -299,19 +391,32 @@ export function InsightsView({
       ) : (
         /* Painel de Configuração e Entrada */
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-6">
-          {/* Seletor de Modo: URL vs Manual */}
-          <div className="flex items-center gap-2 border-b border-border pb-4">
+          {/* Seletor de Modo: Canal Inteiro vs Vídeo Único vs Manual */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-border pb-4">
             <button
               type="button"
-              onClick={() => setInputMode('url')}
+              onClick={() => setInputMode('channel')}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
-                inputMode === 'url'
+                inputMode === 'channel'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'bg-muted/60 text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Youtube className="h-4 w-4" />
-              Link de Vídeo do YouTube (Automático)
+              <Flame className="h-4 w-4 text-amber-300" />
+              Canal Inteiro (Vídeos Mais Virais)
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setInputMode('video')}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
+                inputMode === 'video'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'bg-muted/60 text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Film className="h-4 w-4" />
+              Vídeo Específico
             </button>
 
             <button
@@ -324,11 +429,104 @@ export function InsightsView({
               }`}
             >
               <FileText className="h-4 w-4" />
-              Colar Comentários Manualmente
+              Colar Manualmente
             </button>
           </div>
 
-          {inputMode === 'url' ? (
+          {/* 1. Modo Canal Inteiro */}
+          {inputMode === 'channel' && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Tv className="h-3.5 w-3.5 text-purple-500" /> Link do Canal ou @handle:
+                  </span>
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    Ex: @manualdomundo, @nostalgiatv ou youtube.com/@nome
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={channelUrl}
+                    onChange={(e) => setChannelUrl(e.target.value)}
+                    placeholder="Ex: @manualdomundo ou https://www.youtube.com/@flowpodcast"
+                    className="w-full rounded-xl border border-input bg-background px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition font-mono"
+                    disabled={statusStep === 'fetching' || statusStep === 'analyzing'}
+                  />
+                </div>
+              </div>
+
+              {/* Controles de Vídeos Virais & Comentários */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center gap-2">
+                    <Flame className="h-4 w-4 text-red-500" />
+                    <span className="text-xs font-semibold text-foreground">
+                      Quantos Vídeos Virais:
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {[
+                      { label: 'Top 3 (Focado)', val: 3 },
+                      { label: 'Top 5 (Profundo)', val: 5 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setViralCount(opt.val)}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                          viralCount === opt.val
+                            ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                            : 'bg-card text-muted-foreground hover:bg-muted border border-border'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 p-3.5">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-4 w-4 text-purple-500" />
+                    <span className="text-xs font-semibold text-foreground">
+                      Coments por Vídeo:
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {[
+                      { label: '30', val: 30 },
+                      { label: '40 (Recomendado)', val: 40 },
+                      { label: '50', val: 50 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setCommentsPerVideo(opt.val)}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                          commentsPerVideo === opt.val
+                            ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                            : 'bg-card text-muted-foreground hover:bg-muted border border-border'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 text-[11px] text-muted-foreground leading-relaxed">
+                💡 <strong>Como funciona:</strong> O ReplyTube pesquisa o canal, ranqueia os vídeos com mais visualizações de todos os tempos, coleta as dezenas de comentários mais relevantes de cada um e sintetiza todas as dores, pedidos e ideias virais em um único relatório.
+              </div>
+            </div>
+          )}
+
+          {/* 2. Modo Vídeo Específico */}
+          {inputMode === 'video' && (
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-foreground flex items-center justify-between">
@@ -343,18 +541,9 @@ export function InsightsView({
                     value={videoUrl}
                     onChange={(e) => setVideoUrl(e.target.value)}
                     placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..."
-                    className="w-full rounded-xl border border-input bg-background px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition pr-28"
+                    className="w-full rounded-xl border border-input bg-background px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition"
                     disabled={statusStep === 'fetching' || statusStep === 'analyzing'}
                   />
-                  <div className="absolute right-2 top-2">
-                    <button
-                      type="button"
-                      onClick={() => setVideoUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ')}
-                      className="hidden text-[10px] text-muted-foreground hover:underline"
-                    >
-                      Exemplo
-                    </button>
-                  </div>
                 </div>
               </div>
 
@@ -389,13 +578,15 @@ export function InsightsView({
                 </div>
               </div>
             </div>
-          ) : (
-            /* Modo Manual */
+          )}
+
+          {/* 3. Modo Manual */}
+          {inputMode === 'manual' && (
             <div className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-foreground">
-                    Título do Vídeo ou Tema (Opcional):
+                    Título do Vídeo ou Canal (Opcional):
                   </label>
                   <input
                     type="text"
@@ -449,7 +640,9 @@ export function InsightsView({
                     {statusMessage}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    A IA está processando sentimento, dores, expectativas e criando ideias de vídeos de alto CTR.
+                    {inputMode === 'channel'
+                      ? 'Cruzando dados de múltiplos vídeos virais e extraindo ideias de novos conteúdos.'
+                      : 'A IA está processando sentimento, dores, expectativas e criando ideias de vídeos de alto CTR.'}
                   </p>
                 </div>
               </div>
@@ -460,7 +653,11 @@ export function InsightsView({
                 className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-purple-600 hover:bg-purple-700 py-3.5 text-xs font-bold text-white transition shadow-sm"
               >
                 <Sparkles className="h-4 w-4" />
-                Minerar Mina de Ouro com IA (gpt-4o-mini)
+                {inputMode === 'channel'
+                  ? '🔥 Varrer Canal & Minerar Vídeos Virais com IA'
+                  : inputMode === 'video'
+                  ? '💎 Minerar Mina de Ouro do Vídeo com IA'
+                  : '💎 Minerar Comentários com IA'}
               </button>
             )}
           </div>

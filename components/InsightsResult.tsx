@@ -26,7 +26,15 @@ import {
   Frown,
   ExternalLink,
   ChevronRight,
+  Eye,
 } from 'lucide-react';
+
+function formatNumber(num: number): string {
+  if (!num) return '0';
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1).replace('.0', '') + 'M';
+  if (num >= 1_000) return (num / 1_000).toFixed(1).replace('.0', '') + 'K';
+  return num.toLocaleString('pt-BR');
+}
 
 interface InsightsResultProps {
   data: InsightsAnalysisResult;
@@ -144,20 +152,26 @@ ${data.contentIdeas
       <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
-            {data.thumbnailUrl && (
+            {data.channelAvatar ? (
+              <img
+                src={data.channelAvatar}
+                alt="Avatar do canal"
+                className="h-14 w-14 rounded-full object-cover border-2 border-purple-500/40 shadow-xs shrink-0"
+              />
+            ) : data.thumbnailUrl ? (
               <img
                 src={data.thumbnailUrl}
                 alt="Thumbnail do vídeo"
                 className="h-16 w-28 rounded-xl object-cover border border-border shadow-xs shrink-0"
               />
-            )}
+            ) : null}
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="rounded-md bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                  MINA DE OURO ATIVA
+                  {data.viralVideos && data.viralVideos.length > 0 ? 'CANAL & VIRAIS ESCANEADOS' : 'MINA DE OURO ATIVA'}
                 </span>
                 <span className="text-[11px] text-muted-foreground">
-                  {data.totalCommentsAnalyzed} comentários analisados
+                  {data.totalCommentsAnalyzed} comentários minerados
                 </span>
               </div>
               <h2 className="text-base font-bold text-foreground leading-snug truncate max-w-xl">
@@ -244,6 +258,46 @@ ${data.contentIdeas
             />
           </div>
         </div>
+
+        {/* Lista de Vídeos Mais Virais Escaneados (se for análise de canal) */}
+        {data.viralVideos && data.viralVideos.length > 0 && (
+          <div className="pt-3 border-t border-border space-y-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+              <Flame className="h-4 w-4 text-red-500" />
+              <span>Vídeos Mais Virais Escaneados do Canal:</span>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {data.viralVideos.map((vid) => (
+                <a
+                  key={vid.id}
+                  href={`https://www.youtube.com/watch?v=${vid.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 rounded-xl border border-border bg-muted/30 p-2.5 hover:bg-muted/60 hover:border-purple-500/30 transition group"
+                >
+                  <img
+                    src={vid.thumbnailUrl}
+                    alt={vid.title}
+                    className="h-12 w-20 rounded-lg object-cover border border-border shrink-0"
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-xs font-semibold text-foreground truncate group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                      {vid.title}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-0.5 text-red-500 font-medium">
+                        <Eye className="h-2.5 w-2.5" /> {formatNumber(vid.viewCount)}
+                      </span>
+                      <span>•</span>
+                      <span>{formatNumber(vid.commentCount)} coments</span>
+                      <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition ml-auto" />
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pilar 1: Resumo Executivo & Perfil */}

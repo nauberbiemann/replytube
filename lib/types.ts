@@ -69,11 +69,21 @@ export interface ExecutiveSummary {
   keyTakeaway: string;
 }
 
+export interface ViralVideoInfo {
+  id: string;
+  title: string;
+  viewCount: number;
+  commentCount: number;
+  thumbnailUrl: string;
+}
+
 export interface InsightsAnalysisResult {
   videoTitle?: string;
   channelTitle?: string;
+  channelAvatar?: string;
   thumbnailUrl?: string;
   videoUrl?: string;
+  viralVideos?: ViralVideoInfo[];
   totalCommentsAnalyzed: number;
   summary: ExecutiveSummary;
   pains: PainPoint[];

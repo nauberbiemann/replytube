@@ -14,8 +14,10 @@ export async function POST(req: NextRequest) {
       comments,
       videoTitle,
       channelTitle,
+      channelAvatar,
       thumbnailUrl,
       videoUrl,
+      viralVideos,
       customTopic,
     } = await req.json();
 
@@ -135,8 +137,10 @@ RETORNE APENAS O JSON NO SEGUINTE FORMATO:
     const result: InsightsAnalysisResult = {
       videoTitle: videoTitle || 'Análise de Comentários',
       channelTitle: channelTitle || 'Canal',
+      channelAvatar,
       thumbnailUrl,
       videoUrl,
+      viralVideos: Array.isArray(viralVideos) ? viralVideos : undefined,
       totalCommentsAnalyzed: sampledComments.length,
       summary: parsedData.summary || {
         profile: 'Audiência geral',
