@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock, MessageSquare, Gem } from 'lucide-react';
+import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock, MessageSquare, Gem, Sprout } from 'lucide-react';
 
 interface HeaderProps {
   onResetCycle: () => void;
   hasPassword?: boolean;
   onLock?: () => void;
-  activeTab?: 'replies' | 'insights';
-  onTabChange?: (tab: 'replies' | 'insights') => void;
+  activeTab?: 'replies' | 'insights' | 'evergreen';
+  onTabChange?: (tab: 'replies' | 'insights' | 'evergreen') => void;
 }
 
 export function Header({
@@ -96,8 +96,21 @@ export function Header({
             >
               <Gem className="h-3.5 w-3.5 text-purple-500" />
               <span>Mina de Ouro</span>
-              <span className="hidden md:inline-block rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[9px] font-bold text-purple-600 dark:text-purple-400">
-                Novo
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onTabChange('evergreen')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                activeTab === 'evergreen'
+                  ? 'bg-card text-teal-500 dark:text-teal-400 shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Sprout className="h-3.5 w-3.5 text-teal-400" />
+              <span>Evergreen</span>
+              <span className="hidden md:inline-block rounded-full bg-teal-500/20 px-1.5 py-0.2 text-[9px] font-bold text-teal-400">
+                Viral
               </span>
             </button>
           </div>

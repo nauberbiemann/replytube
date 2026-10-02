@@ -15,6 +15,7 @@ import { CommentUploader } from '@/components/CommentUploader';
 import { SessionThread } from '@/components/SessionThread';
 import { PasswordModal } from '@/components/PasswordModal';
 import { InsightsView } from '@/components/InsightsView';
+import { EvergreenView } from '@/components/EvergreenView';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 interface Toast {
@@ -25,8 +26,8 @@ interface Toast {
 
 export default function DashboardPage() {
   // Navegação de Abas
-  const [activeTab, setActiveTab] = useState<'replies' | 'insights'>('replies');
-  const activeTabRef = useRef<'replies' | 'insights'>('replies');
+  const [activeTab, setActiveTab] = useState<'replies' | 'insights' | 'evergreen'>('replies');
+  const activeTabRef = useRef<'replies' | 'insights' | 'evergreen'>('replies');
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -525,11 +526,20 @@ export default function DashboardPage() {
               onRefine={handleRefineReply}
             />
           </div>
-        ) : (
+        ) : activeTab === 'insights' ? (
           <InsightsView
             appPassword={appPassword}
             channelContext={channelContext}
             addToast={addToast}
+          />
+        ) : (
+          <EvergreenView
+            appPassword={appPassword}
+            addToast={addToast}
+            onNavigateToMinaDeOuro={(topic) => {
+              setActiveTab('insights');
+              addToast(`Tema "${topic}" selecionado para a Mina de Ouro!`, 'info');
+            }}
           />
         )}
       </main>
