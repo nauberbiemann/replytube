@@ -23,6 +23,7 @@ import {
   Check,
   Globe2,
   Copy,
+  X,
 } from 'lucide-react';
 
 interface EvergreenViewProps {
@@ -160,8 +161,8 @@ export function EvergreenView({
 
   // Build outbound URLs
   const getFacebookUrl = (query: string) => {
-    const filterToken = 'eyJjYWxsYmFjayI6InZpZGVvc19maWx0ZXIiLCJmaWx0ZXJzIjpbeyJuYW1lIjoidmlkZW9zX2NyZWF0aW9uX3RpbWUiLCJhcmdzIjoidGhpc19tb250aCJ9XX0%3D';
-    return `https://www.facebook.com/search/videos?q=${encodeURIComponent(query)}&filters=${filterToken}`;
+    // Facebook Watch video search (clean, reliable, avoids broken filter tokens)
+    return `https://www.facebook.com/watch/search/?q=${encodeURIComponent(query)}`;
   };
 
   const getYouTubeShortsUrl = (query: string) => {
@@ -178,6 +179,156 @@ export function EvergreenView({
     await navigator.clipboard.writeText(text);
     setCopiedQuery(text);
     setTimeout(() => setCopiedQuery(null), 1500);
+  };
+
+  const isSelectedTermInActiveNiche = useMemo(() => {
+    if (!selectedTerm || !expandedNicheId) return false;
+    return filteredCategories.some((cat) =>
+      cat.niches.some((n) => n.id === expandedNicheId && n.terms.some((t) => t.pt === selectedTerm.pt))
+    );
+  }, [selectedTerm, expandedNicheId, filteredCategories]);
+
+  const topCardTerm = useMemo(() => {
+    if (customTermTranslations) return customTermTranslations;
+    if (searchQuery.trim() && !isSelectedTermInActiveNiche) {
+      return { pt: searchQuery.trim(), en: searchQuery.trim(), es: searchQuery.trim() };
+    }
+    if (selectedTerm && !isSelectedTermInActiveNiche) {
+      return selectedTerm;
+    }
+    return null;
+  }, [customTermTranslations, searchQuery, isSelectedTermInActiveNiche, selectedTerm]);
+
+  const renderCard = (term: EvergreenTerm, isInline = false) => {
+    return (
+      <div
+        className={`rounded-2xl border ${
+          isInline
+            ? 'border-teal-500/40 bg-card/95 shadow-md my-3 p-4'
+            : 'border-teal-500/30 bg-card p-5 shadow-lg'
+        } space-y-3 animate-in fade-in duration-200`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 border-b border-border/80 pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-500/10 text-teal-400 font-bold text-xs">
+              🎯
+            </span>
+            <div>
+              <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider">
+                {isInline ? 'Termo Ativo' : 'Links de Pesquisa Instantânea'}
+              </span>
+              <h3 className="text-xs sm:text-sm font-bold text-foreground">
+                Termo: "{term.pt}"
+              </h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onNavigateToMinaDeOuro && (
+              <button
+                type="button"
+                onClick={() => onNavigateToMinaDeOuro(term.pt)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2.5 py-1 text-[11px] font-semibold transition"
+                title="Ir para a Mina de Ouro com este tema"
+              >
+                <Sparkles className="h-3 w-3" /> Minerar com IA →
+              </button>
+            )}
+
+            {isInline && (
+              <button
+                type="button"
+                onClick={() => setSelectedTerm(null)}
+                className="rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition"
+                title="Fechar painel deste termo"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 3 Linhas de Idiomas: Inglês, Português e Espanhol */}
+        <div className="space-y-2">
+          {[
+            { lang: 'Inglês', flag: '🇬🇧', query: term.en },
+            { lang: 'Português', flag: '🇧🇷', query: term.pt },
+            { lang: 'Espanhol', flag: '🇪🇸', query: term.es },
+          ].map((item, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 rounded-xl border border-border/80 bg-muted/25 px-3 py-2 hover:bg-muted/40 transition"
+            >
+              <div className="flex items-center gap-2.5 min-w-[180px]">
+                <span className="text-sm">{item.flag}</span>
+                <div>
+                  <span className="text-[9px] font-semibold text-muted-foreground uppercase">
+                    {item.lang}
+                  </span>
+                  <p className="text-xs font-bold text-foreground font-mono flex items-center gap-1.5">
+                    {item.query}
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(item.query)}
+                      className="text-muted-foreground hover:text-foreground transition p-0.5"
+                      title="Copiar termo"
+                    >
+                      {copiedQuery === item.query ? (
+                        <Check className="h-3 w-3 text-teal-400" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </button>
+                  </p>
+                </div>
+              </div>
+
+              {/* Botões de Ação Direta */}
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                {/* Facebook este mês */}
+                <a
+                  href={getFacebookUrl(item.query)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 text-[11px] font-semibold text-blue-400 transition shadow-xs group"
+                  title="Abrir busca de vídeos no Facebook Watch"
+                >
+                  <Facebook className="h-3 w-3 fill-current" />
+                  <span>Facebook este mês</span>
+                  <ExternalLink className="h-2.5 w-2.5 opacity-70 group-hover:opacity-100 transition" />
+                </a>
+
+                {/* YouTube <= 20 min */}
+                <a
+                  href={getYouTubeShortsUrl(item.query)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-400 transition shadow-xs group"
+                  title="Vídeos com até 20 minutos do último mês ordenados por visualizações"
+                >
+                  <Youtube className="h-3.5 w-3.5 fill-current text-red-500" />
+                  <span>YouTube ≤ 20 min</span>
+                  <ExternalLink className="h-2.5 w-2.5 opacity-70 group-hover:opacity-100 transition" />
+                </a>
+
+                {/* YouTube > 20 min */}
+                <a
+                  href={getYouTubeLongUrl(item.query)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-400 transition shadow-xs group"
+                  title="Vídeos longos com mais de 20 minutos do último mês ordenados por visualizações"
+                >
+                  <Youtube className="h-3.5 w-3.5 fill-current text-red-500" />
+                  <span>YouTube &gt; 20 min</span>
+                  <ExternalLink className="h-2.5 w-2.5 opacity-70 group-hover:opacity-100 transition" />
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -258,129 +409,8 @@ export function EvergreenView({
         </div>
       </div>
 
-      {/* Caixa de Termo Ativo / Ações de Pesquisa (quando um termo é clicado ou pesquisado) */}
-      {(selectedTerm || customTermTranslations || searchQuery.trim()) && (
-        <div className="rounded-2xl border border-teal-500/30 bg-card p-5 shadow-lg space-y-4 animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-3">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/10 text-teal-400 font-bold text-xs">
-                🎯
-              </span>
-              <div>
-                <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider">
-                  Links de Pesquisa Instantânea
-                </span>
-                <h3 className="text-sm font-bold text-foreground">
-                  Termo Selecionado: "{selectedTerm ? selectedTerm.pt : searchQuery}"
-                </h3>
-              </div>
-            </div>
-
-            {onNavigateToMinaDeOuro && (
-              <button
-                type="button"
-                onClick={() => onNavigateToMinaDeOuro(selectedTerm ? selectedTerm.pt : searchQuery)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 py-1.5 text-xs font-semibold transition"
-                title="Ir para a Mina de Ouro com este tema"
-              >
-                <Sparkles className="h-3.5 w-3.5" /> Minerar com IA na Mina de Ouro →
-              </button>
-            )}
-          </div>
-
-          {/* 3 Linhas de Idiomas: Inglês, Português e Espanhol */}
-          <div className="space-y-3">
-            {[
-              {
-                lang: 'Inglês',
-                flag: '🇬🇧',
-                query: selectedTerm ? selectedTerm.en : (customTermTranslations ? customTermTranslations.en : searchQuery),
-              },
-              {
-                lang: 'Português',
-                flag: '🇧🇷',
-                query: selectedTerm ? selectedTerm.pt : (customTermTranslations ? customTermTranslations.pt : searchQuery),
-              },
-              {
-                lang: 'Espanhol',
-                flag: '🇪🇸',
-                query: selectedTerm ? selectedTerm.es : (customTermTranslations ? customTermTranslations.es : searchQuery),
-              },
-            ].map((item, idx) => (
-              <div
-                key={idx}
-                className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 p-3 hover:bg-muted/40 transition"
-              >
-                <div className="flex items-center gap-3 min-w-[200px]">
-                  <span className="text-base">{item.flag}</span>
-                  <div>
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase">
-                      {item.lang}
-                    </span>
-                    <p className="text-xs font-bold text-foreground font-mono flex items-center gap-1.5">
-                      {item.query}
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(item.query)}
-                        className="text-muted-foreground hover:text-foreground transition p-0.5"
-                        title="Copiar termo"
-                      >
-                        {copiedQuery === item.query ? (
-                          <Check className="h-3 w-3 text-teal-400" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
-                    </p>
-                  </div>
-                </div>
-
-                {/* Botões de Ação Direta */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Facebook este mês */}
-                  <a
-                    href={getFacebookUrl(item.query)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 text-xs font-semibold text-blue-400 transition shadow-xs group"
-                    title="Abrir busca de vídeos do Facebook deste mês"
-                  >
-                    <Facebook className="h-3.5 w-3.5 fill-current" />
-                    <span>Facebook este mês</span>
-                    <ExternalLink className="h-3 w-3 opacity-70 group-hover:opacity-100 transition" />
-                  </a>
-
-                  {/* YouTube <= 20 min */}
-                  <a
-                    href={getYouTubeShortsUrl(item.query)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-400 transition shadow-xs group"
-                    title="Vídeos com até 20 minutos do último mês ordenados por visualizações"
-                  >
-                    <Youtube className="h-3.5 w-3.5 fill-current text-red-500" />
-                    <span>YouTube ≤ 20 min</span>
-                    <ExternalLink className="h-3 w-3 opacity-70 group-hover:opacity-100 transition" />
-                  </a>
-
-                  {/* YouTube > 20 min */}
-                  <a
-                    href={getYouTubeLongUrl(item.query)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-400 transition shadow-xs group"
-                    title="Vídeos longos com mais de 20 minutos do último mês ordenados por visualizações"
-                  >
-                    <Youtube className="h-3.5 w-3.5 fill-current text-red-500" />
-                    <span>YouTube &gt; 20 min</span>
-                    <ExternalLink className="h-3 w-3 opacity-70 group-hover:opacity-100 transition" />
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Caixa de Termo Ativo / Ações de Pesquisa no topo (apenas quando não renderizado inline no nicho aberto) */}
+      {topCardTerm && renderCard(topCardTerm, false)}
 
       {/* Lista de Categorias & Nichos Accordion */}
       <div className="space-y-3">
@@ -452,25 +482,32 @@ export function EvergreenView({
 
                         {/* Terms Pills */}
                         {isNicheOpen && (
-                          <div className="flex flex-wrap gap-2 pt-2 animate-in fade-in duration-150">
-                            {niche.terms.map((term, tIdx) => {
-                              const isSelected = selectedTerm?.pt === term.pt;
+                          <div className="space-y-3 pt-2 animate-in fade-in duration-150">
+                            <div className="flex flex-wrap gap-2">
+                              {niche.terms.map((term, tIdx) => {
+                                const isSelected = selectedTerm?.pt === term.pt;
 
-                              return (
-                                <button
-                                  key={tIdx}
-                                  type="button"
-                                  onClick={() => handleSelectTerm(term)}
-                                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
-                                    isSelected
-                                      ? 'bg-teal-500/25 text-teal-300 border border-teal-500/50 shadow-sm font-semibold'
-                                      : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted border border-border/60'
-                                  }`}
-                                >
-                                  {term.pt}
-                                </button>
-                              );
-                            })}
+                                return (
+                                  <button
+                                    key={tIdx}
+                                    type="button"
+                                    onClick={() => handleSelectTerm(term)}
+                                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-teal-500/25 text-teal-300 border border-teal-500/50 shadow-sm font-semibold ring-1 ring-teal-400/50'
+                                        : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted border border-border/60'
+                                    }`}
+                                  >
+                                    {term.pt}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Inline Action Card when term in this niche is selected */}
+                            {selectedTerm && niche.terms.some((t) => t.pt === selectedTerm.pt) && (
+                              renderCard(selectedTerm, true)
+                            )}
                           </div>
                         )}
                       </div>
