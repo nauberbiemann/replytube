@@ -14,6 +14,7 @@ import { VideoReference } from '@/components/VideoReference';
 import { CommentUploader } from '@/components/CommentUploader';
 import { SessionThread } from '@/components/SessionThread';
 import { PasswordModal } from '@/components/PasswordModal';
+import { InsightsView } from '@/components/InsightsView';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 interface Toast {
@@ -23,6 +24,14 @@ interface Toast {
 }
 
 export default function DashboardPage() {
+  // Navegação de Abas
+  const [activeTab, setActiveTab] = useState<'replies' | 'insights'>('replies');
+  const activeTabRef = useRef<'replies' | 'insights'>('replies');
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   // Autenticação e Proteção por Senha
   const [appPassword, setAppPassword] = useState<string>('');
   const [isLocked, setIsLocked] = useState<boolean>(false);
@@ -381,6 +390,10 @@ export default function DashboardPage() {
       if (isLocked) return;
 
       const activeEl = document.activeElement;
+      if (activeTabRef.current !== 'replies') {
+        return;
+      }
+
       if (
         activeEl?.tagName === 'INPUT' ||
         activeEl?.tagName === 'TEXTAREA' ||
@@ -432,6 +445,8 @@ export default function DashboardPage() {
         onResetCycle={handleResetCycle}
         hasPassword={requiresPassword}
         onLock={handleLockManual}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
 
       {/* Modal de Bloqueio por Senha */}
@@ -468,47 +483,55 @@ export default function DashboardPage() {
       </div>
 
       <main className="mx-auto max-w-6xl px-4 pt-6">
-        <div className="grid items-start gap-6 lg:grid-cols-[380px,1fr]">
-          {/* Coluna Esquerda: Contexto, Vídeo e Novo Comentário */}
-          <aside className="space-y-4">
-            <ChannelManager
-              channels={channels}
-              selectedId={selectedChannelId}
-              onSelect={(id) => handleSelectChannel(id)}
-              onCreate={handleCreateChannel}
-              onEdit={handleEditChannel}
-              onRemove={handleRemoveChannel}
-              loading={contextLoading}
-              context={channelContext}
-            />
+        {activeTab === 'replies' ? (
+          <div className="grid items-start gap-6 lg:grid-cols-[380px,1fr]">
+            {/* Coluna Esquerda: Contexto, Vídeo e Novo Comentário */}
+            <aside className="space-y-4">
+              <ChannelManager
+                channels={channels}
+                selectedId={selectedChannelId}
+                onSelect={(id) => handleSelectChannel(id)}
+                onCreate={handleCreateChannel}
+                onEdit={handleEditChannel}
+                onRemove={handleRemoveChannel}
+                loading={contextLoading}
+                context={channelContext}
+              />
 
-            <VideoReference
-              title={videoTitle}
-              onTitleChange={setVideoTitle}
-              image={videoImage}
-              onImageChange={setVideoImage}
-              disabled={generating}
-            />
+              <VideoReference
+                title={videoTitle}
+                onTitleChange={setVideoTitle}
+                image={videoImage}
+                onImageChange={setVideoImage}
+                disabled={generating}
+              />
 
-            <CommentUploader
-              image={commentImage}
-              onImageChange={setCommentImage}
-              fallbackText={fallbackText}
-              onFallbackTextChange={setFallbackText}
-              onSubmit={() => handleGenerateReply()}
-              loading={generating}
-              disabled={!channelContext}
-              onCancel={handleCancelGenerate}
-              ocrFailed={ocrFailed}
-            />
-          </aside>
+              <CommentUploader
+                image={commentImage}
+                onImageChange={setCommentImage}
+                fallbackText={fallbackText}
+                onFallbackTextChange={setFallbackText}
+                onSubmit={() => handleGenerateReply()}
+                loading={generating}
+                disabled={!channelContext}
+                onCancel={handleCancelGenerate}
+                ocrFailed={ocrFailed}
+              />
+            </aside>
 
-          {/* Coluna Direita: Thread da Sessão com Histórico e Refinamento */}
-          <SessionThread
-            items={threadItems}
-            onRefine={handleRefineReply}
+            {/* Coluna Direita: Thread da Sessão com Histórico e Refinamento */}
+            <SessionThread
+              items={threadItems}
+              onRefine={handleRefineReply}
+            />
+          </div>
+        ) : (
+          <InsightsView
+            appPassword={appPassword}
+            channelContext={channelContext}
+            addToast={addToast}
           />
-        </div>
+        )}
       </main>
     </div>
   );
