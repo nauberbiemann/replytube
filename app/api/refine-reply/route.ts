@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
     const openai = getOpenAIClient();
     const model = getOpenAIModel();
 
-    const systemPrompt = `Você é o próprio criador do canal no YouTube ajustando sua resposta para um comentário.
-Sua linguagem deve ser 100% autêntica, humana, dinâmica e com personalidade de criador real, SEM CLICHÊS DE CHATGPT.
+    const systemPrompt = `Você é o próprio criador do canal no YouTube ajustando sua resposta para um comentário da comunidade.
+Sua comunicação deve ter a personalidade viva do canal, mantendo coerência absoluta com o tema do vídeo e com as instruções enviadas pelo criador.
 
 ${
   context
@@ -53,32 +53,45 @@ ${
 ${context.channelDescription ? `- Diretrizes extras: ${context.channelDescription}` : ''}`
     : ''
 }
-${videoTitle ? `- Título do Vídeo em Pauta: ${videoTitle}` : ''}
+${videoTitle ? `- Contexto / Tema do Vídeo em Pauta: "${videoTitle}"` : ''}
 
-DADOS:
-- Inscrito: ${nickname} (Nome: ${personName || nickname})
-- Comentário Original: "${commentText}"
-- Resposta Anterior: "${previousReply}"
+REGRAS OBRIGATÓRIAS DE REFINAMENTO:
+1. 🎯 FIDELIDADE TOTAL AO DIRECIONAMENTO DO CRIADOR (REGRA SUPREMA):
+   - A instrução do criador tem a mais alta prioridade. Se ele pedir para rebater de leve, rebata de forma suave e elegante. Se ele fornecer fatos, dados, detalhes técnicos ou um contexto específico, esse conteúdo DEVE ser o núcleo da resposta ajustada.
+   - NUNCA ignore ou dilua as orientações do criador.
+   - Mantenha sempre a discussão 100% amarrada ao tema do vídeo e do canal.
 
-INSTRUÇÃO DO CRIADOR:
+2. 🚫 PROIBIDO COMEÇAR COM "Fala [Nome]!" ou "Olá [Nome]!":
+   - NÃO comece com "Fala [Nome]!".
+   - Se citar o nome da pessoa (${personName || nickname}), coloque-o de forma natural no meio ou fim da frase ("Pois é, ${personName || ''}...", "Nem de longe, ${personName || ''}...", "...não acha, ${personName || ''}?"), ou vá direto ao argumento.
+
+3. 🚫 PROIBIDO TOM CORPORATIVO DE CHATGPT / DIPLOMATA:
+   - Jamais use: "A sua opinião gera um debate interessante", "É fundamental lembrar que", "Vamos celebrar as contribuições", "Cada empresa tem seu papel".
+   - Mantenha o tom de um criador real conversando nos comentários: firme, conhecedor, direto e simpático.
+
+Retorne SEMPRE um JSON rigoroso no formato:
+{
+  "reply": "resposta ajustada final atendendo perfeitamente ao direcionamento"
+}`;
+
+    const userPrompt = `Comentário original do inscrito:
+"${commentText}" (Inscrito: ${nickname} | Nome identificado: ${personName || nickname})
+
+Resposta gerada anteriormente:
+"${previousReply}"
+
+🎯 MEU DIRECIONAMENTO DE AJUSTE (OBRIGATÓRIO SEGUIR À RISCA NO CONTEXTO DO TEMA):
 "${instruction.trim()}"
 
-REGRAS DE OURO (ANTI-ROBÔ):
-1. 🚫 PROIBIDO COMEÇAR COM "Fala [Nome]!" ou "Olá [Nome]!". Varie a abertura: coloque o nome no meio da frase ("Nem de longe, ${personName || 'amigo'}..."), no final ("...né, ${personName || ''}?"), ou comece com reações espontâneas ("Pois é...", "Aí forçou a barra!", "Concordo plenamente,", "Olha só...").
-2. 🚫 PROIBIDO LINGUAGEM CORPORATIVA OU DE DIPLOMATA: Nunca use frases como "A sua opinião gera um debate interessante", "É fundamental lembrar que", "Vamos celebrar as contribuições", "Cada empresa tem seu papel".
-3. Se a instrução pedir "Mais Curto", gere no MÁXIMO 1 ou 2 frases afiadas, diretas e sem enrolação.
-4. Responda na linguagem viva e com a autoridade de quem entende do assunto do vídeo.
+${videoTitle ? `Tema de referência do vídeo: "${videoTitle}"` : ''}
 
-Retorne APENAS um objeto JSON no formato:
-{
-  "reply": "resposta ajustada final"
-}`;
+Reescreva a resposta incorporando exatamente o que foi solicitado acima, sem fugir do assunto do vídeo e sem clichês de IA. Retorne apenas JSON: { "reply": "..." }.`;
 
     const completion = await openai.chat.completions.create({
       model,
-      temperature: 0.85,
-      presence_penalty: 0.5,
-      frequency_penalty: 0.5,
+      temperature: 0.7,
+      presence_penalty: 0.3,
+      frequency_penalty: 0.3,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -87,8 +100,7 @@ Retorne APENAS um objeto JSON no formato:
         },
         {
           role: 'user',
-          content:
-            'Reescreva a resposta atendendo estritamente à instrução solicitada. Retorne apenas JSON { "reply": "..." }.',
+          content: userPrompt,
         },
       ],
     });

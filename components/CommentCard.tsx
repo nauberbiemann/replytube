@@ -149,6 +149,21 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
                 onClick={async () => {
                   setRefining(true);
                   try {
+                    await onRefine(item.id, 'Rebata de forma suave, amigável e elegante, trazendo uma perspectiva diferente ou nuance do tema sem confrontar agressivamente, respeitando a colocação do inscrito mas defendendo o ponto do vídeo.');
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                🛡️ Rebater de Leve
+              </button>
+              <button
+                type="button"
+                disabled={refining}
+                onClick={async () => {
+                  setRefining(true);
+                  try {
                     await onRefine(item.id, 'Rebata o comentário com firmeza, dados reais do vídeo e um toque de ironia/humor inteligente de quem entende do assunto, sem papo corporativo de assessor de imprensa.');
                   } finally {
                     setRefining(false);
