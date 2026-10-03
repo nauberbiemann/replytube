@@ -50,6 +50,7 @@ export function EvergreenView({
   const [customTermTranslations, setCustomTermTranslations] = useState<EvergreenTerm | null>(null);
   const [translatingWithAi, setTranslatingWithAi] = useState(false);
   const [copiedQuery, setCopiedQuery] = useState<string | null>(null);
+  const [youtubePeriod, setYoutubePeriod] = useState<'all_time' | 'this_month' | 'this_year'>('all_time');
 
   // Stats calculation
   const totalCategories = EVERGREEN_CATEGORIES.length;
@@ -166,13 +167,23 @@ export function EvergreenView({
   };
 
   const getYouTubeShortsUrl = (query: string) => {
-    // This month, sort by view count, duration <= 20 min (4-20m)
-    return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=CAMSBAgEGAM%3D`;
+    // CAMSAhgD: Sort by view count, duration <= 20 min (all time - recomendado para termos em PT)
+    // CAMSBAgEGAM=: Sort by view count, duration <= 20 min (this month)
+    // CAMSBAgFEAM=: Sort by view count, duration <= 20 min (this year)
+    let sp = 'CAMSAhgD';
+    if (youtubePeriod === 'this_month') sp = 'CAMSBAgEGAM%3D';
+    else if (youtubePeriod === 'this_year') sp = 'CAMSBAgFEAM%3D';
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${sp}`;
   };
 
   const getYouTubeLongUrl = (query: string) => {
-    // This month, sort by view count, duration > 20 min
-    return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=CAMSBAgEGAI%3D`;
+    // CAMSAhgC: Sort by view count, duration > 20 min (all time - recomendado)
+    // CAMSBAgEGAI=: Sort by view count, duration > 20 min (this month)
+    // CAMSBAgFEAI=: Sort by view count, duration > 20 min (this year)
+    let sp = 'CAMSAhgC';
+    if (youtubePeriod === 'this_month') sp = 'CAMSBAgEGAI%3D';
+    else if (youtubePeriod === 'this_year') sp = 'CAMSBAgFEAI%3D';
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${sp}`;
   };
 
   const handleCopy = async (text: string) => {
@@ -248,6 +259,53 @@ export function EvergreenView({
           </div>
         </div>
 
+        {/* Seletor de Período do YouTube */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Youtube className="h-3.5 w-3.5 text-red-500 fill-current shrink-0" />
+            <span className="text-[11px] font-semibold text-foreground">Filtro do YouTube:</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1 bg-background/80 p-0.5 rounded-lg border border-border/40 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setYoutubePeriod('all_time')}
+              className={`px-2 py-0.5 rounded-md font-semibold transition ${
+                youtubePeriod === 'all_time'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Mais vistos de todos os tempos. Sempre encontra os maiores vídeos virais, sem dar 'Nenhum resultado'."
+            >
+              🌟 Mais Vistos (Geral)
+            </button>
+            <button
+              type="button"
+              onClick={() => setYoutubePeriod('this_month')}
+              className={`px-2 py-0.5 rounded-md font-semibold transition ${
+                youtubePeriod === 'this_month'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Apenas vídeos postados no último mês (se não houver publicações recentes, o YouTube pode mostrar zero resultados)"
+            >
+              🔥 Este Mês
+            </button>
+            <button
+              type="button"
+              onClick={() => setYoutubePeriod('this_year')}
+              className={`px-2 py-0.5 rounded-md font-semibold transition ${
+                youtubePeriod === 'this_year'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Vídeos postados no último ano"
+            >
+              📅 Este Ano
+            </button>
+          </div>
+        </div>
+
         {/* 3 Linhas de Idiomas: Inglês, Português e Espanhol */}
         <div className="space-y-2">
           {[
@@ -304,10 +362,18 @@ export function EvergreenView({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-400 transition shadow-xs group"
-                  title="Vídeos com até 20 minutos do último mês ordenados por visualizações"
+                  title={
+                    youtubePeriod === 'all_time'
+                      ? 'Vídeos mais vistos de até 20 minutos de todos os tempos'
+                      : youtubePeriod === 'this_month'
+                      ? 'Vídeos de até 20 minutos deste mês'
+                      : 'Vídeos de até 20 minutos deste ano'
+                  }
                 >
                   <Youtube className="h-3.5 w-3.5 fill-current text-red-500" />
-                  <span>YouTube ≤ 20 min</span>
+                  <span>
+                    YouTube ≤ 20 min {youtubePeriod === 'this_month' ? '(mês)' : youtubePeriod === 'this_year' ? '(ano)' : ''}
+                  </span>
                   <ExternalLink className="h-2.5 w-2.5 opacity-70 group-hover:opacity-100 transition" />
                 </a>
 
@@ -317,11 +383,30 @@ export function EvergreenView({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-400 transition shadow-xs group"
-                  title="Vídeos longos com mais de 20 minutos do último mês ordenados por visualizações"
+                  title={
+                    youtubePeriod === 'all_time'
+                      ? 'Vídeos mais vistos com mais de 20 minutos de todos os tempos'
+                      : youtubePeriod === 'this_month'
+                      ? 'Vídeos com mais de 20 minutos deste mês'
+                      : 'Vídeos com mais de 20 minutos deste ano'
+                  }
                 >
                   <Youtube className="h-3.5 w-3.5 fill-current text-red-500" />
-                  <span>YouTube &gt; 20 min</span>
+                  <span>
+                    YouTube &gt; 20 min {youtubePeriod === 'this_month' ? '(mês)' : youtubePeriod === 'this_year' ? '(ano)' : ''}
+                  </span>
                   <ExternalLink className="h-2.5 w-2.5 opacity-70 group-hover:opacity-100 transition" />
+                </a>
+
+                {/* Busca Direta no YouTube (sem filtros) */}
+                <a
+                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(item.query)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-muted/40 hover:bg-muted p-1.5 text-muted-foreground hover:text-foreground transition"
+                  title="Busca direta no YouTube (igual a digitar na barra e clicar na lupa)"
+                >
+                  <Search className="h-3 w-3" />
                 </a>
               </div>
             </div>
