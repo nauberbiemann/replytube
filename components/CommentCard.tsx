@@ -188,6 +188,36 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
               >
                 💬 Mais Informal
               </button>
+              <button
+                type="button"
+                disabled={refining}
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(item.id, 'Mantenha o argumento principal conectado ao tema do vídeo, mas finalize convidando o inscrito a acompanhar os próximos vídeos do canal e utilizando de forma natural os bordões oficiais do canal.');
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                🎬 Fechar c/ Canal / Bordão
+              </button>
+              <button
+                type="button"
+                disabled={refining}
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(item.id, 'Mantenha o argumento principal, mas finalize com uma pergunta técnica curta e instigante diretamente ligada ao tema do vídeo para estimular o inscrito a responder de volta.');
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                ❓ Pergunta no Tema
+              </button>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -198,7 +228,7 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
                   onKeyDown={handleKeyDown}
                   disabled={refining}
                   rows={2}
-                  placeholder="Digite sua diretriz exata (ex: 'Destaque o custo 30% menor do KC-390', 'Seja mais sóbrio, sem trocadilhos de radar')... [Ctrl+Enter]"
+                  placeholder="Digite sua diretriz exata (ex: 'Destaque o custo 30% menor do KC-390', 'Feche convidando para os próximos vídeos')... [Ctrl+Enter]"
                   className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-50"
                 />
 
