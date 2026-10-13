@@ -88,6 +88,11 @@ REGRAS SUPREMAS E INVIOLÁVEIS DE REFINAMENTO:
    - NÃO comece com saudações prontas e repetitivas como "Fala [Nome]!".
    - Se citar o nome da pessoa (${personName || nickname}), coloque-o de forma natural na frase ("Pois é, ${personName || ''}...", "Exatamente, ${personName || ''}...", "...não acha, ${personName || ''}?"), ou vá direto ao argumento.
 
+5. 🌐 REGRA DE TRADUÇÃO / IDIOMA DO COMENTÁRIO:
+   - Se o direcionamento pedir para traduzir para o idioma do comentário original (ou para um idioma específico), identifique o idioma exato em que o comentário original ("${commentText.slice(0, 120)}...") foi escrito (ex: Inglês, Espanhol, Francês, Alemão, etc.).
+   - Traduza a resposta anterior INTEGRALMENTE para esse idioma com naturalidade e fluência de um criador nativo da área técnica.
+   - Mantenha 100% dos argumentos técnicos, perguntas e estrutura da resposta anterior, e adapte os bordões finais para o idioma de destino de forma natural (ex: em Inglês: "Keep following the upcoming videos here on the channel! Clear radar over here!" / "Until the next flight!"; em Espanhol: "¡Sigue acompañando los próximos videos del canal! ¡Radar limpio por aquí!" / "¡Hasta el próximo vuelo!"). Não deixe nenhuma frase em português quando a tradução para outro idioma for solicitada.
+
 Retorne SEMPRE um JSON rigoroso no formato:
 {
   "reply": "resposta ajustada final atendendo perfeitamente ao direcionamento e com fechamento direcionado"
@@ -96,7 +101,7 @@ Retorne SEMPRE um JSON rigoroso no formato:
     const userPrompt = `Comentário original do inscrito:
 "${commentText}" (Inscrito: ${nickname} | Nome identificado: ${personName || nickname})
 
-Resposta gerada anteriormente (que você deve substituir/corrigir):
+Resposta gerada anteriormente (que você deve ajustar ou traduzir conforme o direcionamento):
 "${previousReply}"
 
 🎯 MEU DIRECIONAMENTO DE AJUSTE (SIGA ESTA ORDEM À RISCA, SEM VIAJAR NEM DESVIAR):
@@ -107,7 +112,7 @@ ${instruction.trim()}
 ${videoTitle ? `Tema do vídeo: "${videoTitle}"` : ''}
 
 INSTRUÇÃO DE EXECUÇÃO:
-Escreva a resposta final incorporando com precisão cirúrgica o direcionamento acima. Responda em no máximo 2 a 3 frases, mantendo rigorosamente o tom de voz do canal (${context?.tomDeVoz || 'técnico e conhecedor'}) e finalizando de forma direcionada (ao tema do vídeo, aos próximos vídeos ou com bordão oficial do canal, sem clichês genéricos de IA).
+Escreva a resposta final incorporando com precisão cirúrgica o direcionamento acima, mantendo rigorosamente o tom de voz do canal (${context?.tomDeVoz || 'técnico e conhecedor'}) e respeitando o idioma solicitado no direcionamento.
 Retorne apenas JSON: { "reply": "..." }`;
 
     const completion = await openai.chat.completions.create({

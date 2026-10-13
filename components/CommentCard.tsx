@@ -218,6 +218,44 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
               >
                 ❓ Pergunta no Tema
               </button>
+              <button
+                type="button"
+                disabled={refining}
+                title="Traduz a resposta atual para o idioma exato em que o comentário original foi escrito"
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(
+                      item.id,
+                      'Traduza a resposta atual INTEGRALMENTE para o mesmo idioma em que o comentário original do inscrito foi escrito, mantendo 100% do sentido técnico, da fluência nativa e adaptando naturalmente o fechamento/bordão para esse idioma.'
+                    );
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 transition shadow-2xs disabled:opacity-50"
+              >
+                🌐 Idioma do Comentário
+              </button>
+              <button
+                type="button"
+                disabled={refining}
+                title="Traduz a resposta atual de volta para Português do Brasil"
+                onClick={async () => {
+                  setRefining(true);
+                  try {
+                    await onRefine(
+                      item.id,
+                      'Traduza a resposta atual INTEGRALMENTE para Português do Brasil, mantendo o sentido técnico exato e os bordões originais do canal em português.'
+                    );
+                  } finally {
+                    setRefining(false);
+                  }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition shadow-2xs disabled:opacity-50"
+              >
+                🇧🇷 PT-BR
+              </button>
             </div>
 
             <div className="flex flex-col gap-2">
