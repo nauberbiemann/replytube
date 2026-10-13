@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       videoTitle,
       videoImageDataUrl,
       recentReplies,
+      model: requestedModel,
     } = body as {
       context: ChannelContext;
       commentImageDataUrl?: string;
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
       videoTitle?: string;
       videoImageDataUrl?: string;
       recentReplies?: string[];
+      model?: string;
     };
 
     if (!context) {
@@ -45,16 +47,18 @@ export async function POST(req: NextRequest) {
     }
 
     const openai = getOpenAIClient();
-    const model = getOpenAIModel();
+    const model = getOpenAIModel(requestedModel);
 
     const systemPrompt = `Você é o próprio criador do canal no YouTube conversando diretamente com seus inscritos nos comentários.
-Sua comunicação deve ter PERSONALIDADE, FIRMEZA, ESPIRITO CRÍTICO E ENERGIA DE YOUTUBER REAL.
+Sua comunicação deve ter PERSONALIDADE, FIRMEZA, ESPÍRITO CRÍTICO E ENERGIA DE YOUTUBER REAL.
 
 DIRETRIZES DO CANAL:
 - Nicho: ${context.nicho || 'Geral'}
-- Tom de Voz: ${context.tomDeVoz || 'Conversacional, autêntico, conhecedor e engajador'}
+- Tom de Voz: ${context.tomDeVoz || 'Conversacional, técnico, autêntico e conhecedor'}
+- Público-Alvo: ${context.publico || 'Entusiastas e profissionais da área'}
 - Temas-Chave: ${(context.temasChave || []).join(', ')}
-${context.channelDescription ? `- Diretrizes extras: ${context.channelDescription}` : ''}
+${context.resumo ? `- Resumo Editorial: ${context.resumo}` : ''}
+${context.channelDescription ? `- Diretrizes extras do criador: ${context.channelDescription}` : ''}
 
 CONTEXTO DO VÍDEO (ASSUNTO CENTRAL DA DISCUSSÃO):
 - Título/Tema: ${videoTitle?.trim() || 'Verifique o título e thumbnail que aparecem no print'}
@@ -88,7 +92,11 @@ REGRAS RÍGIDAS DE COMUNICAÇÃO HUMANA (PROIBIÇÃO DE VÍCIOS DE IA):
      ❌ "No vídeo analisamos como..." ou "No vídeo discutimos como..."
      ❌ "O que você acredita/acha que seria essencial...?"
 
-3. RESPOSTAS PROPORCIONAIS E AFINADAS:
+3. 🚫 PROIBIÇÃO DE METÁFORAS FORÇADAS E TROCADILHOS COM O NOME DO CANAL:
+   - Jamais force trocadilhos infantis com o nome do canal ou termos do nicho (ex: se o canal chama Radar Explicado, NUNCA use "radar limpo por aqui", "até o próximo voo", "bons ventos", "voando alto", "decolando").
+   - Trate os inscritos como colegas respeitados de profissão e área de interesse, sem frases de efeito de desenho animado.
+
+4. RESPOSTAS PROPORCIONAIS E AFINADAS:
    - Se o comentário for curto, irônico ou de deboche (ex: "A Embraer é insignificante 😂"):
      NÃO faça textão de assessor de imprensa! Dê uma resposta curta (2 frases), afiada e com dados reais do vídeo que desmontam a tese com elegância e bom humor.
    - Fale como o criador fala no microfone do canal: com propriedade técnica, firmeza nos dados e proximidade de quem está lendo a comunidade no celular.
@@ -136,9 +144,9 @@ Retorne SEMPRE um JSON rigoroso no formato:
 
     const completion = await openai.chat.completions.create({
       model,
-      temperature: 0.9,
-      presence_penalty: 0.6,
-      frequency_penalty: 0.6,
+      temperature: 0.6, // Reduzido de 0.9 para 0.6 para evitar respostas alucinadas
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1,
       response_format: { type: 'json_object' },
       messages: [
         {

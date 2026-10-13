@@ -190,35 +190,42 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
               </button>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <textarea
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={refining}
-                rows={2}
-                placeholder="Pedir ajuste, rebater ou dar nova instrução (ex: 'Deixe mais informal', 'Foque no ponto X')... [Ctrl+Enter]"
-                className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-50"
-              />
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <textarea
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={refining}
+                  rows={2}
+                  placeholder="Digite sua diretriz exata (ex: 'Destaque o custo 30% menor do KC-390', 'Seja mais sóbrio, sem trocadilhos de radar')... [Ctrl+Enter]"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-50"
+                />
 
-              <button
-                type="button"
-                onClick={handleRefine}
-                disabled={refining || !instruction.trim()}
-                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/90 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              >
-                {refining ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Refinando...
-                  </>
-                ) : (
-                  <>
-                    <CornerDownLeft className="h-3.5 w-3.5" />
-                    Refinar
-                  </>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleRefine}
+                  disabled={refining || !instruction.trim()}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:bg-foreground/90 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                >
+                  {refining ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Refinando...
+                    </>
+                  ) : (
+                    <>
+                      <CornerDownLeft className="h-3.5 w-3.5" />
+                      Refinar
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <span>💡</span>
+                <span><strong>Fidelidade Estrita:</strong> A IA agora foca 100% no argumento que você digitar, sem inventar assuntos nem repetir clichês.</span>
+              </span>
             </div>
           </div>
         </div>

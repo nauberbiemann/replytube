@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock, MessageSquare, Gem, Sprout } from 'lucide-react';
+import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock, MessageSquare, Gem, Sprout, Cpu } from 'lucide-react';
 
 interface HeaderProps {
   onResetCycle: () => void;
@@ -9,6 +9,8 @@ interface HeaderProps {
   onLock?: () => void;
   activeTab?: 'replies' | 'insights' | 'evergreen';
   onTabChange?: (tab: 'replies' | 'insights' | 'evergreen') => void;
+  selectedModel?: string;
+  onModelChange?: (model: string) => void;
 }
 
 export function Header({
@@ -17,6 +19,8 @@ export function Header({
   onLock,
   activeTab = 'replies',
   onTabChange,
+  selectedModel = 'gpt-4o-mini',
+  onModelChange,
 }: HeaderProps) {
   const [isDark, setIsDark] = useState<boolean>(true);
   const [mounted, setMounted] = useState(false);
@@ -55,13 +59,34 @@ export function Header({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold tracking-tight text-foreground">ReplyTube</h1>
-              <span
-                title="Modelo contemplado na sua cota diária de 2.5 milhões de tokens gratuitos!"
-                className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 cursor-help"
-              >
-                <Sparkles className="h-2.5 w-2.5" />
-                gpt-4o-mini
-              </span>
+              <div className="hidden sm:inline-flex items-center rounded-full border border-border/80 bg-muted/60 p-0.5 text-[10px] font-semibold shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => onModelChange?.('gpt-4o-mini')}
+                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 transition ${
+                    selectedModel === 'gpt-4o-mini'
+                      ? 'bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="gpt-4o-mini: Rápido e econômico (cota diária de 2.5 milhões de tokens gratuitos)"
+                >
+                  <Sparkles className="h-2.5 w-2.5 text-emerald-400" />
+                  gpt-4o-mini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onModelChange?.('gpt-4o')}
+                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 transition ${
+                    selectedModel === 'gpt-4o'
+                      ? 'bg-purple-500/20 text-purple-400 font-bold border border-purple-500/30 shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="gpt-4o: Alta capacidade de raciocínio lógico e adesão rigorosa a instruções complexas"
+                >
+                  <Cpu className="h-2.5 w-2.5 text-purple-400" />
+                  gpt-4o
+                </button>
+              </div>
             </div>
             <p className="text-[11px] text-muted-foreground hidden sm:block">
               IA para Criadores do YouTube

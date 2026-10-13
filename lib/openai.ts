@@ -13,6 +13,9 @@ export function getOpenAIClient(): OpenAI {
   });
 }
 
-export function getOpenAIModel(): string {
+export function getOpenAIModel(requestedModel?: string): string {
+  if (requestedModel && ['gpt-4o', 'gpt-4o-mini', 'chatgpt-4o-latest'].includes(requestedModel)) {
+    return requestedModel;
+  }
   return process.env.OPENAI_MODEL || 'gpt-4o-mini';
 }

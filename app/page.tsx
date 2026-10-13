@@ -60,12 +60,39 @@ export default function DashboardPage() {
   // Notificações Toast
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const [selectedModel, setSelectedModel] = useState<string>('gpt-4o-mini');
+  const selectedModelRef = useRef<string>('gpt-4o-mini');
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const selectedChannelRef = useRef<ChannelContext | null>(null);
   const generatingRef = useRef<boolean>(false);
   const videoTitleRef = useRef<string>('');
   const videoImageRef = useRef<string>('');
   const appPasswordRef = useRef<string>('');
+
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('replytube_selected_model');
+    if (saved && ['gpt-4o-mini', 'gpt-4o'].includes(saved)) {
+      setSelectedModel(saved);
+      selectedModelRef.current = saved;
+    }
+  }, []);
+
+  const handleModelChange = (model: string) => {
+    setSelectedModel(model);
+    selectedModelRef.current = model;
+    localStorage.setItem('replytube_selected_model', model);
+    addToast(
+      model === 'gpt-4o'
+        ? 'Modelo alternado para GPT-4o (Máxima precisão e raciocínio).'
+        : 'Modelo alternado para GPT-4o-mini (Rápido e econômico).',
+      'info'
+    );
+  };
 
   // Manter refs atualizadas para os event listeners
   useEffect(() => {
@@ -271,6 +298,7 @@ export default function DashboardPage() {
             videoTitle: videoTitleRef.current,
             videoImageDataUrl: videoImageRef.current,
             recentReplies: threadItems.slice(0, 4).map((t) => t.reply),
+            model: selectedModelRef.current,
           }),
           signal: controller.signal,
         });
@@ -347,6 +375,7 @@ export default function DashboardPage() {
           instruction,
           videoTitle: videoTitleRef.current,
           context: selectedChannelRef.current,
+          model: selectedModelRef.current,
         }),
       });
 
@@ -448,6 +477,8 @@ export default function DashboardPage() {
         onLock={handleLockManual}
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        selectedModel={selectedModel}
+        onModelChange={handleModelChange}
       />
 
       {/* Modal de Bloqueio por Senha */}
