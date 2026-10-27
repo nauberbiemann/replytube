@@ -8,9 +8,16 @@ import { MessageSquareDashed } from 'lucide-react';
 interface SessionThreadProps {
   items: CommentItem[];
   onRefine: (id: string, instruction: string) => Promise<void>;
+  onRemoveSavedTopic?: (commentId: string, savedTopicId: string) => void;
+  onManualSaveTopic?: (commentId: string, topicTitle: string) => void;
 }
 
-export function SessionThread({ items, onRefine }: SessionThreadProps) {
+export function SessionThread({
+  items,
+  onRefine,
+  onRemoveSavedTopic,
+  onManualSaveTopic,
+}: SessionThreadProps) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between pb-1">
@@ -37,7 +44,13 @@ export function SessionThread({ items, onRefine }: SessionThreadProps) {
       ) : (
         <div className="space-y-4">
           {items.map((item) => (
-            <CommentCard key={item.id} item={item} onRefine={onRefine} />
+            <CommentCard
+              key={item.id}
+              item={item}
+              onRefine={onRefine}
+              onRemoveSavedTopic={onRemoveSavedTopic}
+              onManualSaveTopic={onManualSaveTopic}
+            />
           ))}
         </div>
       )}

@@ -81,6 +81,9 @@ REGRAS OBRIGATÓRIAS:
    - A) Canal / Próximos Vídeos + Bordão Oficial do Canal (ex: convide para acompanhar os próximos vídeos e feche com o bordão do canal);
    - B) Pergunta Técnica Curta sobre o dilema central do vídeo;
    - C) Conclusão Técnica Afiada cravando a tese do vídeo.
+4. EXTRAÇÃO AUTOMÁTICA DE PAUTA/TEMA ("suggestedTopic"):
+   - Se o comentário trouxer uma dúvida técnica, comparação, caso real, pedido, crítica construtiva ou gancho interessante que renda um NOVO VÍDEO para o canal, crie em "suggestedTopic" uma sugestão concisa de tema/título em Português (ex: "Disputa KC-390 vs C-130J na Força Aérea dos EUA e o impacto da Scope Clause nos E2").
+   - Se for apenas um elogio genérico ("Ótimo vídeo!", "Parabéns pelo canal!"), retorne "" (vazio) em "suggestedTopic".
 
 Retorne APENAS JSON:
 {
@@ -88,6 +91,7 @@ Retorne APENAS JSON:
   "personName": "Primeiro Nome",
   "commentText": "texto exato do comentário",
   "detectedVideoTitle": "título do vídeo lido no canto direito do print (ou vazio se não visível)",
+  "suggestedTopic": "Ideia de tema/pauta extraída do comentário (em PT-BR) ou vazio se for só elogio comum",
   "reply": "resposta humana, técnica e com fechamento A, B ou C"
 }`;
 
@@ -164,6 +168,7 @@ Retorne APENAS JSON:
       personName: parsed.personName || '',
       commentText: parsed.commentText || commentTextFallback || '',
       detectedVideoTitle: parsed.detectedVideoTitle || '',
+      suggestedTopic: parsed.suggestedTopic || '',
       reply: parsed.reply || '',
     });
   } catch (error: any) {

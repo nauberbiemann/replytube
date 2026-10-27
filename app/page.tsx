@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Channel, ChannelContext, CommentItem } from '@/lib/types';
+import { Channel, ChannelContext, CommentItem, SavedTopic } from '@/lib/types';
 import {
   getStoredChannels,
   createChannel,
   updateChannel,
   removeChannel,
   saveChannelContextCache,
+  getStoredTopics,
+  addSavedTopic,
+  updateSavedTopicTitle,
+  removeSavedTopic,
 } from '@/lib/storage';
 import { optimizeImageFile } from '@/lib/image-optimizer';
 import { Header } from '@/components/Header';
@@ -15,6 +19,7 @@ import { ChannelManager } from '@/components/ChannelManager';
 import { VideoReference } from '@/components/VideoReference';
 import { CommentUploader } from '@/components/CommentUploader';
 import { SessionThread } from '@/components/SessionThread';
+import { SavedTopicsPanel } from '@/components/SavedTopicsPanel';
 import { PasswordModal } from '@/components/PasswordModal';
 import { InsightsView } from '@/components/InsightsView';
 import { EvergreenView } from '@/components/EvergreenView';
@@ -59,6 +64,9 @@ export default function DashboardPage() {
   // Thread da Sessão
   const [threadItems, setThreadItems] = useState<CommentItem[]>([]);
 
+  // Banco de Temas Salvos (Permanente no localStorage)
+  const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
+
   // Notificações Toast
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -67,6 +75,7 @@ export default function DashboardPage() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const selectedChannelRef = useRef<ChannelContext | null>(null);
+  const selectedChannelIdRef = useRef<string>('');
   const generatingRef = useRef<boolean>(false);
   const videoTitleRef = useRef<string>('');
   const videoImageRef = useRef<string>('');
@@ -100,6 +109,10 @@ export default function DashboardPage() {
   useEffect(() => {
     selectedChannelRef.current = channelContext;
   }, [channelContext]);
+
+  useEffect(() => {
+    selectedChannelIdRef.current = selectedChannelId;
+  }, [selectedChannelId]);
 
   useEffect(() => {
     generatingRef.current = generating;
@@ -182,13 +195,14 @@ export default function DashboardPage() {
     addToast('Aplicativo bloqueado.', 'info');
   };
 
-  // Carregar canais do localStorage ao iniciar
+  // Carregar canais e banco de temas do localStorage ao iniciar
   useEffect(() => {
     const stored = getStoredChannels();
     setChannels(stored);
     if (stored.length > 0) {
       handleSelectChannel(stored[0].id, stored);
     }
+    setSavedTopics(getStoredTopics());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -335,8 +349,31 @@ export default function DashboardPage() {
           throw new Error(data.error || 'Falha ao processar o comentário.');
         }
 
+        const resolvedVideoTitle =
+          videoTitleRef.current.trim() || data.detectedVideoTitle || '';
+
         if (data.detectedVideoTitle && !videoTitleRef.current.trim()) {
           setVideoTitle(data.detectedVideoTitle);
+        }
+
+        // Salvar automaticamente o tema extraído (se a IA identificou pauta relevante)
+        let savedTopicId: string | undefined;
+        const rawTopic = (data.suggestedTopic || '').trim();
+        const storedChs = getStoredChannels();
+        const activeCh = storedChs.find((c) => c.id === selectedChannelIdRef.current);
+        const channelName = activeCh?.name || currentContext.nicho || 'Canal';
+
+        if (rawTopic.length > 5) {
+          const result = addSavedTopic({
+            channelId: selectedChannelIdRef.current || undefined,
+            channelName,
+            topicTitle: rawTopic,
+            commentText: data.commentText || textToSend,
+            nickname: data.nickname || 'Inscrito',
+            sourceVideoTitle: resolvedVideoTitle,
+          });
+          savedTopicId = result.saved.id;
+          setSavedTopics(result.list);
         }
 
         const newItem: CommentItem = {
@@ -345,6 +382,8 @@ export default function DashboardPage() {
           personName: data.personName,
           commentText: data.commentText,
           reply: data.reply,
+          suggestedTopic: rawTopic || undefined,
+          savedTopicId,
           imageDataUrl: imageToSend,
           createdAt: new Date().toISOString(),
         };
@@ -419,6 +458,70 @@ export default function DashboardPage() {
     } catch (err: any) {
       addToast(err?.message || 'Erro ao refinar resposta.', 'error');
     }
+  };
+
+  // Gerenciamento do Banco de Temas Salvos
+  const handleAddManualTopic = (title: string) => {
+    const activeCh = channels.find((c) => c.id === selectedChannelId);
+    const channelName = activeCh?.name || channelContext?.nicho || 'Geral';
+    const result = addSavedTopic({
+      channelId: selectedChannelId || undefined,
+      channelName,
+      topicTitle: title,
+      commentText: '',
+      nickname: 'Manual',
+      sourceVideoTitle: videoTitle,
+    });
+    setSavedTopics(result.list);
+    addToast('Tema adicionado ao Banco de Temas!', 'success');
+  };
+
+  const handleUpdateSavedTopic = (id: string, newTitle: string) => {
+    const updated = updateSavedTopicTitle(id, newTitle);
+    setSavedTopics(updated);
+    setThreadItems((prev) =>
+      prev.map((it) =>
+        it.savedTopicId === id ? { ...it, suggestedTopic: newTitle } : it
+      )
+    );
+    addToast('Tema atualizado!', 'success');
+  };
+
+  const handleRemoveSavedTopic = (id: string, commentId?: string) => {
+    const updated = removeSavedTopic(id);
+    setSavedTopics(updated);
+    setThreadItems((prev) =>
+      prev.map((it) =>
+        it.savedTopicId === id || (commentId && it.id === commentId)
+          ? { ...it, savedTopicId: undefined }
+          : it
+      )
+    );
+    addToast('Tema removido do Banco de Temas.', 'info');
+  };
+
+  const handleManualSaveFromComment = (commentId: string, topicTitle: string) => {
+    const item = threadItems.find((t) => t.id === commentId);
+    if (!item) return;
+    const activeCh = channels.find((c) => c.id === selectedChannelId);
+    const channelName = activeCh?.name || channelContext?.nicho || 'Canal';
+    const result = addSavedTopic({
+      channelId: selectedChannelId || undefined,
+      channelName,
+      topicTitle,
+      commentText: item.commentText,
+      nickname: item.nickname,
+      sourceVideoTitle: videoTitle,
+    });
+    setSavedTopics(result.list);
+    setThreadItems((prev) =>
+      prev.map((it) =>
+        it.id === commentId
+          ? { ...it, suggestedTopic: topicTitle, savedTopicId: result.saved.id }
+          : it
+      )
+    );
+    addToast('Tema salvo no Banco de Temas!', 'success');
   };
 
   // Resetar ciclo da sessão
@@ -585,11 +688,27 @@ export default function DashboardPage() {
               />
             </aside>
 
-            {/* Coluna Direita: Thread da Sessão com Histórico e Refinamento */}
-            <SessionThread
-              items={threadItems}
-              onRefine={handleRefineReply}
-            />
+            {/* Coluna Direita: Banco de Temas Salvos + Thread da Sessão */}
+            <div className="space-y-4">
+              <SavedTopicsPanel
+                topics={savedTopics}
+                activeChannelName={
+                  channels.find((c) => c.id === selectedChannelId)?.name
+                }
+                onAddManualTopic={handleAddManualTopic}
+                onUpdateTopic={handleUpdateSavedTopic}
+                onRemoveTopic={(id) => handleRemoveSavedTopic(id)}
+              />
+
+              <SessionThread
+                items={threadItems}
+                onRefine={handleRefineReply}
+                onRemoveSavedTopic={(commentId, savedId) =>
+                  handleRemoveSavedTopic(savedId, commentId)
+                }
+                onManualSaveTopic={handleManualSaveFromComment}
+              />
+            </div>
           </div>
         ) : activeTab === 'insights' ? (
           <InsightsView

@@ -22,7 +22,20 @@ export interface CommentItem {
   personName?: string;
   commentText: string;
   reply: string;
+  suggestedTopic?: string;
+  savedTopicId?: string;
   createdAt?: string;
+}
+
+export interface SavedTopic {
+  id: string;
+  channelId?: string;
+  channelName: string;
+  topicTitle: string;
+  commentText: string;
+  nickname: string;
+  sourceVideoTitle?: string;
+  createdAt: string;
 }
 
 export interface VideoReferenceData {

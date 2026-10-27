@@ -10,14 +10,24 @@ import {
   Loader2,
   CornerDownLeft,
   User,
+  Lightbulb,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 
 interface CommentCardProps {
   item: CommentItem;
   onRefine: (id: string, instruction: string) => Promise<void>;
+  onRemoveSavedTopic?: (commentId: string, savedTopicId: string) => void;
+  onManualSaveTopic?: (commentId: string, topicTitle: string) => void;
 }
 
-export function CommentCard({ item, onRefine }: CommentCardProps) {
+export function CommentCard({
+  item,
+  onRefine,
+  onRemoveSavedTopic,
+  onManualSaveTopic,
+}: CommentCardProps) {
   const [copied, setCopied] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [refining, setRefining] = useState(false);
@@ -87,6 +97,49 @@ export function CommentCard({ item, onRefine }: CommentCardProps) {
               {item.commentText}
             </p>
           </div>
+
+          {/* Selo de Tema Extraído / Salvo Automaticamente */}
+          {item.suggestedTopic && item.savedTopicId ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 flex items-start justify-between gap-2">
+              <div className="flex items-start gap-1.5 text-[11px]">
+                <Lightbulb className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-amber-400 block">
+                    Tema salvo automaticamente:
+                  </span>
+                  <span className="text-foreground/90">{item.suggestedTopic}</span>
+                </div>
+              </div>
+              {onRemoveSavedTopic && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveSavedTopic(item.id, item.savedTopicId!)}
+                  className="rounded p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition shrink-0"
+                  title="Remover este tema do Banco de Temas"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            onManualSaveTopic && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onManualSaveTopic(
+                      item.id,
+                      item.suggestedTopic || item.commentText.slice(0, 110)
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1 text-[10px] font-medium text-amber-400 hover:bg-amber-500/15 transition"
+                >
+                  <Plus className="h-3 w-3" />
+                  Salvar como Ideia de Tema
+                </button>
+              </div>
+            )
+          )}
         </div>
 
         {/* Lado Direito: Resposta Gerada e Refinamento */}
