@@ -37,7 +37,6 @@ export async function optimizeImageDataUrl(
   }
 
   const maxWidth = options.maxWidth ?? 960;
-  const maxHeight = options.maxHeight ?? 480;
   const quality = options.quality ?? 0.82;
 
   return new Promise<string>((resolve) => {
@@ -46,7 +45,11 @@ export async function optimizeImageDataUrl(
       try {
         let { width, height } = img;
 
-        // Calcula proporção para caber estritamente dentro de maxWidth x maxHeight (máx 2 blocos de 512x512)
+        // Se for um print vertical/alto (com vários comentários de uma vez), permite até 1000px de altura (máx 4 blocos para vários comentários).
+        // Se for um print horizontal de 1 comentário só, limita a 480px de altura (máx 2 blocos).
+        const isTallMultiComment = height > width * 0.55;
+        const maxHeight = options.maxHeight ?? (isTallMultiComment ? 1000 : 480);
+
         if (width > maxWidth || height > maxHeight) {
           const ratio = Math.min(maxWidth / width, maxHeight / height);
           width = Math.max(1, Math.round(width * ratio));

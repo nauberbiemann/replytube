@@ -356,43 +356,74 @@ export default function DashboardPage() {
           setVideoTitle(data.detectedVideoTitle);
         }
 
-        // Salvar automaticamente o tema extraído (se a IA identificou pauta relevante)
-        let savedTopicId: string | undefined;
-        const rawTopic = (data.suggestedTopic || '').trim();
         const storedChs = getStoredChannels();
         const activeCh = storedChs.find((c) => c.id === selectedChannelIdRef.current);
         const channelName = activeCh?.name || currentContext.nicho || 'Canal';
 
-        if (rawTopic.length > 5) {
-          const result = addSavedTopic({
-            channelId: selectedChannelIdRef.current || undefined,
-            channelName,
-            topicTitle: rawTopic,
-            commentText: data.commentText || textToSend,
-            nickname: data.nickname || 'Inscrito',
-            sourceVideoTitle: resolvedVideoTitle,
+        const extractedList: any[] =
+          Array.isArray(data.comments) && data.comments.length > 0
+            ? data.comments
+            : [
+                {
+                  nickname: data.nickname,
+                  personName: data.personName,
+                  commentText: data.commentText,
+                  videoTitle: resolvedVideoTitle,
+                  suggestedTopic: data.suggestedTopic,
+                  reply: data.reply,
+                },
+              ];
+
+        const newItems: CommentItem[] = [];
+        let latestSavedTopics = getStoredTopics();
+
+        for (const entry of extractedList) {
+          let savedTopicId: string | undefined;
+          const rawTopic = (entry.suggestedTopic || '').trim();
+          const itemVideoTitle = entry.videoTitle || resolvedVideoTitle;
+
+          if (rawTopic.length > 5) {
+            const result = addSavedTopic({
+              channelId: selectedChannelIdRef.current || undefined,
+              channelName,
+              topicTitle: rawTopic,
+              commentText: entry.commentText || textToSend,
+              nickname: entry.nickname || 'Inscrito',
+              sourceVideoTitle: itemVideoTitle,
+            });
+            savedTopicId = result.saved.id;
+            latestSavedTopics = result.list;
+          }
+
+          newItems.push({
+            id: crypto.randomUUID(),
+            nickname: entry.nickname || 'Espectador',
+            personName: entry.personName || '',
+            commentText: entry.commentText || textToSend,
+            reply: entry.reply || '',
+            suggestedTopic: rawTopic || undefined,
+            savedTopicId,
+            imageDataUrl: imageToSend,
+            createdAt: new Date().toISOString(),
           });
-          savedTopicId = result.saved.id;
-          setSavedTopics(result.list);
         }
 
-        const newItem: CommentItem = {
-          id: crypto.randomUUID(),
-          nickname: data.nickname,
-          personName: data.personName,
-          commentText: data.commentText,
-          reply: data.reply,
-          suggestedTopic: rawTopic || undefined,
-          savedTopicId,
-          imageDataUrl: imageToSend,
-          createdAt: new Date().toISOString(),
-        };
-
-        setThreadItems((prev) => [newItem, ...prev]);
+        setSavedTopics(latestSavedTopics);
+        setThreadItems((prev) => [...newItems, ...prev]);
         setCommentImage('');
         setFallbackText('');
-        const displayName = data.personName || data.nickname.replace(/^@/, '');
-        addToast(`Resposta gerada para ${displayName}!`, 'success');
+
+        if (newItems.length > 1) {
+          addToast(
+            `${newItems.length} comentários divididos e respondidos individualmente!`,
+            'success'
+          );
+        } else {
+          const displayName =
+            newItems[0]?.personName ||
+            (newItems[0]?.nickname || '').replace(/^@/, '');
+          addToast(`Resposta gerada para ${displayName}!`, 'success');
+        }
       } catch (err: any) {
         if (controller.signal.aborted) {
           addToast('Geração de resposta cancelada.', 'info');
@@ -584,7 +615,6 @@ export default function DashboardPage() {
 
       optimizeImageFile(file, {
         maxWidth: 960,
-        maxHeight: 480,
         quality: 0.82,
       })
         .then((optimizedDataUrl) => {

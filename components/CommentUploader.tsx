@@ -48,7 +48,6 @@ export function CommentUploader({
     try {
       const optimized = await optimizeImageFile(file, {
         maxWidth: 960,
-        maxHeight: 480,
         quality: 0.82,
       });
       onImageChange(optimized);

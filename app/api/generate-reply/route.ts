@@ -84,20 +84,29 @@ REGRAS OBRIGATÓRIAS:
 4. EXTRAÇÃO AUTOMÁTICA DE PAUTA/TEMA ("suggestedTopic"):
    - Se o comentário trouxer uma dúvida técnica, comparação, caso real, pedido, crítica construtiva ou gancho interessante que renda um NOVO VÍDEO para o canal, crie em "suggestedTopic" uma sugestão concisa de tema/título em Português (ex: "Disputa KC-390 vs C-130J na Força Aérea dos EUA e o impacto da Scope Clause nos E2").
    - Se for apenas um elogio genérico ("Ótimo vídeo!", "Parabéns pelo canal!"), retorne "" (vazio) em "suggestedTopic".
+5. SUPORTE A MÚLTIPLOS COMENTÁRIOS NO MESMO PRINT:
+   - Se o print contiver APENAS 1 comentário, retorne 1 item dentro do array "comments".
+   - Se o print contiver VÁRIOS comentários de pessoas diferentes, divida e extraia CADA comentário separadamente na ordem em que aparecem (de cima para baixo) dentro do array "comments", gerando uma resposta 100% independente, personalizada e variando as aberturas e os estilos de finalização (A, B e C) entre eles para que nenhuma resposta fique parecida com a outra!
+   - Caso cada linha de comentário no print do YouTube Studio seja de um vídeo diferente (mostrado na miniatura à direita daquele comentário), use o título correspondente de cada vídeo na resposta e preencha "videoTitle" no item.
 
-Retorne APENAS JSON:
+Retorne APENAS JSON no formato:
 {
-  "nickname": "@usuario",
-  "personName": "Primeiro Nome",
-  "commentText": "texto exato do comentário",
   "detectedVideoTitle": "título do vídeo lido no canto direito do print (ou vazio se não visível)",
-  "suggestedTopic": "Ideia de tema/pauta extraída do comentário (em PT-BR) ou vazio se for só elogio comum",
-  "reply": "resposta humana, técnica e com fechamento A, B ou C"
+  "comments": [
+    {
+      "nickname": "@usuario",
+      "personName": "Primeiro Nome",
+      "commentText": "texto exato deste comentário",
+      "videoTitle": "título do vídeo específico deste comentário (se visível ao lado dele)",
+      "suggestedTopic": "Ideia de tema/pauta extraída deste comentário (em PT-BR) ou vazio se for só elogio comum",
+      "reply": "resposta humana, técnica e independente com fechamento A, B ou C"
+    }
+  ]
 }`;
 
     const userContentParts: any[] = [];
 
-    let textInstruction = 'Extraia autor, comentário, título do vídeo (canto direito do print) e gere a resposta seguindo as regras.';
+    let textInstruction = 'Extraia todos os comentários visíveis no print (1 ou vários), separe cada pessoa e gere respostas independentes seguindo as regras.';
     if (videoTitle?.trim()) {
       textInstruction += `\nVídeo: "${videoTitle.trim()}"`;
     }
@@ -153,7 +162,24 @@ Retorne APENAS JSON:
 
     const parsed = JSON.parse(responseContent);
 
-    if (!parsed.commentText && !commentTextFallback?.trim()) {
+    const rawComments: any[] = Array.isArray(parsed.comments)
+      ? parsed.comments
+      : parsed.commentText || parsed.reply
+      ? [parsed]
+      : [];
+
+    const validComments = rawComments
+      .map((c) => ({
+        nickname: c.nickname || 'Espectador',
+        personName: c.personName || '',
+        commentText: c.commentText || commentTextFallback || '',
+        videoTitle: c.videoTitle || parsed.detectedVideoTitle || '',
+        suggestedTopic: c.suggestedTopic || '',
+        reply: c.reply || '',
+      }))
+      .filter((c) => c.commentText.trim() || c.reply.trim());
+
+    if (validComments.length === 0 && !commentTextFallback?.trim()) {
       return NextResponse.json(
         {
           error:
@@ -163,13 +189,23 @@ Retorne APENAS JSON:
       );
     }
 
+    const first = validComments[0] || {
+      nickname: 'Espectador',
+      personName: '',
+      commentText: commentTextFallback || '',
+      videoTitle: '',
+      suggestedTopic: '',
+      reply: '',
+    };
+
     return NextResponse.json({
-      nickname: parsed.nickname || 'Espectador',
-      personName: parsed.personName || '',
-      commentText: parsed.commentText || commentTextFallback || '',
-      detectedVideoTitle: parsed.detectedVideoTitle || '',
-      suggestedTopic: parsed.suggestedTopic || '',
-      reply: parsed.reply || '',
+      nickname: first.nickname,
+      personName: first.personName,
+      commentText: first.commentText,
+      detectedVideoTitle: parsed.detectedVideoTitle || first.videoTitle || '',
+      suggestedTopic: first.suggestedTopic,
+      reply: first.reply,
+      comments: validComments,
     });
   } catch (error: any) {
     console.error('Erro em /api/generate-reply:', error);
