@@ -3,6 +3,7 @@ export interface Channel {
   name: string;
   description: string;
   createdAt: string;
+  cachedContext?: ChannelContext;
 }
 
 export interface ChannelContext {

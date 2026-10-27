@@ -9,6 +9,7 @@ import {
   X,
   StopCircle,
 } from 'lucide-react';
+import { optimizeImageFile } from '@/lib/image-optimizer';
 
 interface CommentUploaderProps {
   image: string;
@@ -42,13 +43,22 @@ export function CommentUploader({
     }
   }, [ocrFailed]);
 
-  const handleFileChange = (file?: File) => {
+  const handleFileChange = async (file?: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      onImageChange(String(reader.result || ''));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimized = await optimizeImageFile(file, {
+        maxWidth: 960,
+        maxHeight: 480,
+        quality: 0.82,
+      });
+      onImageChange(optimized);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        onImageChange(String(reader.result || ''));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {

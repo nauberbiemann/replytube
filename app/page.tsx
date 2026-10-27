@@ -7,7 +7,9 @@ import {
   createChannel,
   updateChannel,
   removeChannel,
+  saveChannelContextCache,
 } from '@/lib/storage';
+import { optimizeImageFile } from '@/lib/image-optimizer';
 import { Header } from '@/components/Header';
 import { ChannelManager } from '@/components/ChannelManager';
 import { VideoReference } from '@/components/VideoReference';
@@ -163,7 +165,13 @@ export default function DashboardPage() {
     // Se já havia canal carregado, ativa-o
     if (channels.length > 0 && selectedChannelId) {
       const ch = channels.find((c) => c.id === selectedChannelId);
-      if (ch) analyzeChannel(ch.description, pass);
+      if (ch) {
+        if (ch.cachedContext) {
+          setChannelContext({ ...ch.cachedContext, channelDescription: ch.description });
+        } else {
+          analyzeChannel(ch.description, pass, ch.id);
+        }
+      }
     }
   };
 
@@ -185,7 +193,7 @@ export default function DashboardPage() {
   }, []);
 
   // Analisar contexto do canal selecionado
-  const analyzeChannel = async (description: string, passOverride?: string) => {
+  const analyzeChannel = async (description: string, passOverride?: string, channelIdToCache?: string) => {
     setContextLoading(true);
     try {
       const pass = passOverride !== undefined ? passOverride : appPasswordRef.current;
@@ -214,6 +222,10 @@ export default function DashboardPage() {
       };
 
       setChannelContext(ctx);
+      if (channelIdToCache) {
+        const updatedList = saveChannelContextCache(channelIdToCache, ctx);
+        setChannels(updatedList);
+      }
       addToast('Canal ativado! Cole o print do comentário para responder.', 'success');
     } catch (err: any) {
       console.error(err);
@@ -227,7 +239,14 @@ export default function DashboardPage() {
     const channel = list.find((c) => c.id === id);
     if (!channel) return;
     setSelectedChannelId(id);
-    analyzeChannel(channel.description);
+    if (channel.cachedContext) {
+      setChannelContext({
+        ...channel.cachedContext,
+        channelDescription: channel.description,
+      });
+      return;
+    }
+    analyzeChannel(channel.description, undefined, channel.id);
   };
 
   const handleCreateChannel = (name: string, description: string) => {
@@ -235,14 +254,14 @@ export default function DashboardPage() {
     const updated = [...channels, created];
     setChannels(updated);
     setSelectedChannelId(created.id);
-    analyzeChannel(created.description);
+    analyzeChannel(created.description, undefined, created.id);
   };
 
   const handleEditChannel = (id: string, name: string, description: string) => {
     const updated = updateChannel(id, name, description);
     setChannels(updated);
     if (selectedChannelId === id) {
-      analyzeChannel(description);
+      analyzeChannel(description, undefined, id);
     }
   };
 
@@ -297,7 +316,7 @@ export default function DashboardPage() {
             commentTextFallback: textToSend,
             videoTitle: videoTitleRef.current,
             videoImageDataUrl: videoImageRef.current,
-            recentReplies: threadItems.slice(0, 4).map((t) => t.reply),
+            recentReplies: threadItems.slice(0, 2).map((t) => t.reply),
             model: selectedModelRef.current,
           }),
           signal: controller.signal,
@@ -314,6 +333,10 @@ export default function DashboardPage() {
             setOcrFailed(true);
           }
           throw new Error(data.error || 'Falha ao processar o comentário.');
+        }
+
+        if (data.detectedVideoTitle && !videoTitleRef.current.trim()) {
+          setVideoTitle(data.detectedVideoTitle);
         }
 
         const newItem: CommentItem = {
@@ -456,13 +479,24 @@ export default function DashboardPage() {
       const file = imageItem.getAsFile();
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = String(reader.result || '');
-        setCommentImage(dataUrl);
-        handleGenerateReply(dataUrl, '');
-      };
-      reader.readAsDataURL(file);
+      optimizeImageFile(file, {
+        maxWidth: 960,
+        maxHeight: 480,
+        quality: 0.82,
+      })
+        .then((optimizedDataUrl) => {
+          setCommentImage(optimizedDataUrl);
+          handleGenerateReply(optimizedDataUrl, '');
+        })
+        .catch(() => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = String(reader.result || '');
+            setCommentImage(dataUrl);
+            handleGenerateReply(dataUrl, '');
+          };
+          reader.readAsDataURL(file);
+        });
     };
 
     window.addEventListener('paste', handleGlobalPaste);

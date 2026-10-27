@@ -2,6 +2,7 @@
 
 import React, { useRef } from 'react';
 import { Film, Upload, X } from 'lucide-react';
+import { optimizeImageFile } from '@/lib/image-optimizer';
 
 interface VideoReferenceProps {
   title: string;
@@ -20,13 +21,22 @@ export function VideoReference({
 }: VideoReferenceProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (file?: File) => {
+  const handleFileChange = async (file?: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      onImageChange(String(reader.result || ''));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const optimized = await optimizeImageFile(file, {
+        maxWidth: 640,
+        maxHeight: 360,
+        quality: 0.78,
+      });
+      onImageChange(optimized);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        onImageChange(String(reader.result || ''));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {

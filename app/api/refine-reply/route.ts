@@ -44,76 +44,39 @@ export async function POST(req: NextRequest) {
     const openai = getOpenAIClient();
     const model = getOpenAIModel(requestedModel);
 
-    const systemPrompt = `Você é o próprio criador do canal no YouTube ajustando sua resposta para um comentário da comunidade.
-Sua comunicação deve ter a personalidade viva do canal, mantendo coerência absoluta com o tema do vídeo e com as instruções enviadas pelo criador.
+    const compactDescription = context?.channelDescription
+      ? context.channelDescription.slice(0, 900)
+      : '';
 
+    const systemPrompt = `Você é o criador do canal no YouTube ajustando sua resposta a um inscrito.
 ${
   context
-    ? `DIRETRIZES E IDENTIDADE DO CANAL:
-- Nicho: ${context.nicho || 'Geral'}
-- Tom de Voz: ${context.tomDeVoz || 'Técnico, analítico, pericial e direto'}
-- Público-Alvo: ${context.publico || 'Entusiastas e profissionais da área'}
-- Temas-Chave: ${(context.temasChave || []).join(', ')}
-${context.resumo ? `- Resumo Editorial: ${context.resumo}` : ''}
-${context.channelDescription ? `- Diretrizes Completas e Bordões Oficiais do Canal:\n"""\n${context.channelDescription}\n"""` : ''}`
+    ? `PERFIL DO CANAL:
+- Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico, analítico e direto'}
+- Público: ${context.publico || 'Entusiastas e profissionais'}
+${context.resumo ? `- Resumo: ${context.resumo}` : ''}
+${compactDescription ? `- Diretrizes e Bordões Oficiais:\n"""\n${compactDescription}\n"""` : ''}`
     : ''
 }
-${videoTitle ? `- Contexto / Tema do Vídeo em Pauta: "${videoTitle}"` : ''}
+${videoTitle ? `TEMA DO VÍDEO: "${videoTitle}"` : ''}
 
-REGRAS SUPREMAS E INVIOLÁVEIS DE REFINAMENTO:
+REGRAS INVIOLÁVEIS:
+1. FIDELIDADE TOTAL À INSTRUÇÃO: A instrução do criador é LEI ESTRITA. Incorpore 100% do direcionamento pedido sem inventar assuntos aleatórios.
+2. CONCISÃO: Máximo de 2 a 3 frases objetivas, sem divagações.
+3. FINALIZAÇÃO DIRECIONADA (PROIBIDO clichês genéricos de IA como "Vamos ver na próxima década!", "Vamos continuar debatendo! 🚀", "O mercado é dinâmico!"):
+   Feche sempre com 1 destes 3 estilos (salvo instrução específica em contrário):
+   - A) Direcionado ao Canal / Próximos Vídeos + Bordão Oficial do Canal;
+   - B) Pergunta Técnica Engajadora sobre o tema do vídeo;
+   - C) Conclusão Técnica Afiada cravando a tese do vídeo.
+4. SEM SAUDAÇÃO PRONTA: Proibido começar com "Fala [Nome]!" ou "Olá [Nome]!". Use o nome (${personName || nickname}) naturalmente na frase.
+5. TRADUÇÃO / IDIOMA: Se a instrução pedir para traduzir para o idioma do comentário original, identifique o idioma exato de "${commentText.slice(0, 100)}" e traduza a resposta INTEGRALMENTE com fluência nativa, adaptando os bordões finais para esse idioma (ex: EN: "Clear radar over here!" / "Until the next flight!"; ES: "¡Radar limpio por aquí!" / "¡Hasta el próximo vuelo!").
 
-1. 🎯 FIDELIDADE TOTAL E CIRÚRGICA À INSTRUÇÃO DO CRIADOR (REGRA DE MÁXIMA PRIORIDADE):
-   - A instrução enviada pelo criador em "MEU DIRECIONAMENTO DE AJUSTE" é uma LEI ESTRITA.
-   - Incorpore 100% dos dados, argumentos, fatos técnicos ou direcionamentos solicitados.
-   - NUNCA use apenas uma parte da instrução para depois inventar assuntos aleatórios no restante.
-   - NUNCA misture a nova instrução com clichês indesejados da resposta anterior. Construa uma resposta nova focada 100% na diretriz enviada.
+Retorne APENAS JSON: { "reply": "..." }`;
 
-2. 🚫 PROIBIÇÃO DE ALUCINAÇÃO, ENCHEÇÃO DE LINGUIÇA E DESVIOS ("SURTOS"):
-   - Mantenha a resposta CONCISA, CIRÚRGICA E FOCADA: no máximo 2 a 3 frases objetivas.
-   - É terminantemente proibido inventar divagações, historinhas, conselhos de vida ou conclusões filosóficas que não foram pedidas.
-   - Ate-se estritamente ao ponto pedido pelo criador.
-
-3. 🎬 REGRA DE OURO PARA AS FINALIZAÇÕES (FECHAMENTO DIRECIONADO):
-   - **PROIBIDO** terminar com frases vazias, genéricas ou de robô de IA como:
-     ❌ "Vamos ver como isso vai se desenrolar na próxima década!"
-     ❌ "Vamos continuar debatendo esses pontos! 🚀"
-     ❌ "O mercado é dinâmico e cheio de surpresas!"
-     ❌ "A sua opinião gera um debate interessante!" / "É fundamental lembrar que..." / "Vamos celebrar as contribuições..."
-   - Finalize sempre com **UM destes 3 fechamentos autênticos** (a menos que o criador peça um fechamento específico na instrução):
-     - **A) Direcionado ao Canal / Próximos Vídeos + Bordões do Canal:** Convide para acompanhar as próximas análises do canal e/ou feche com um dos bordões oficiais definidos nas Diretrizes do Canal (ex: "Continua acompanhando os próximos vídeos aqui no canal que vem muita análise pesada nessa linha!", "Fica ligado nas próximas análises. Radar limpo por aqui / Até o próximo voo!").
-     - **B) Direcionado ao Tema do Vídeo (Pergunta Técnica Engajadora):** Uma pergunta direta e inteligente sobre o tema técnico do vídeo para estimular resposta do inscrito.
-     - **C) Direcionado à Tese do Vídeo (Conclusão Técnica Afiada):** Termine cravando o argumento central sem enrolação.
-
-4. 🚫 PROIBIDO COMEÇAR COM "Fala [Nome]!" ou "Olá [Nome]!":
-   - NÃO comece com saudações prontas e repetitivas como "Fala [Nome]!".
-   - Se citar o nome da pessoa (${personName || nickname}), coloque-o de forma natural na frase ("Pois é, ${personName || ''}...", "Exatamente, ${personName || ''}...", "...não acha, ${personName || ''}?"), ou vá direto ao argumento.
-
-5. 🌐 REGRA DE TRADUÇÃO / IDIOMA DO COMENTÁRIO:
-   - Se o direcionamento pedir para traduzir para o idioma do comentário original (ou para um idioma específico), identifique o idioma exato em que o comentário original ("${commentText.slice(0, 120)}...") foi escrito (ex: Inglês, Espanhol, Francês, Alemão, etc.).
-   - Traduza a resposta anterior INTEGRALMENTE para esse idioma com naturalidade e fluência de um criador nativo da área técnica.
-   - Mantenha 100% dos argumentos técnicos, perguntas e estrutura da resposta anterior, e adapte os bordões finais para o idioma de destino de forma natural (ex: em Inglês: "Keep following the upcoming videos here on the channel! Clear radar over here!" / "Until the next flight!"; em Espanhol: "¡Sigue acompañando los próximos videos del canal! ¡Radar limpio por aquí!" / "¡Hasta el próximo vuelo!"). Não deixe nenhuma frase em português quando a tradução para outro idioma for solicitada.
-
-Retorne SEMPRE um JSON rigoroso no formato:
-{
-  "reply": "resposta ajustada final atendendo perfeitamente ao direcionamento e com fechamento direcionado"
-}`;
-
-    const userPrompt = `Comentário original do inscrito:
-"${commentText}" (Inscrito: ${nickname} | Nome identificado: ${personName || nickname})
-
-Resposta gerada anteriormente (que você deve ajustar ou traduzir conforme o direcionamento):
-"${previousReply}"
-
-🎯 MEU DIRECIONAMENTO DE AJUSTE (SIGA ESTA ORDEM À RISCA, SEM VIAJAR NEM DESVIAR):
-"""
-${instruction.trim()}
-"""
-
-${videoTitle ? `Tema do vídeo: "${videoTitle}"` : ''}
-
-INSTRUÇÃO DE EXECUÇÃO:
-Escreva a resposta final incorporando com precisão cirúrgica o direcionamento acima, mantendo rigorosamente o tom de voz do canal (${context?.tomDeVoz || 'técnico e conhecedor'}) e respeitando o idioma solicitado no direcionamento.
-Retorne apenas JSON: { "reply": "..." }`;
+    const userPrompt = `Comentário (${personName || nickname}): "${commentText}"
+Resposta anterior: "${previousReply}"
+DIRECIONAMENTO OBRIGATÓRIO: """${instruction.trim()}"""
+Retorne JSON: { "reply": "..." }`;
 
     const completion = await openai.chat.completions.create({
       model,

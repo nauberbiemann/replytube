@@ -35,11 +35,25 @@ export function createChannel(name: string, description: string): Channel {
   return newChannel;
 }
 
-export function updateChannel(id: string, name: string, description: string): Channel[] {
+export function updateChannel(id: string, name: string, description: string, cachedContext?: Channel['cachedContext']): Channel[] {
   const current = getStoredChannels();
-  const updated = current.map((c) =>
-    c.id === id ? { ...c, name: name.trim(), description: description.trim() } : c
-  );
+  const updated = current.map((c) => {
+    if (c.id !== id) return c;
+    const descChanged = c.description !== description.trim();
+    return {
+      ...c,
+      name: name.trim(),
+      description: description.trim(),
+      cachedContext: cachedContext !== undefined ? cachedContext : descChanged ? undefined : c.cachedContext,
+    };
+  });
+  saveChannels(updated);
+  return updated;
+}
+
+export function saveChannelContextCache(id: string, cachedContext: Channel['cachedContext']): Channel[] {
+  const current = getStoredChannels();
+  const updated = current.map((c) => (c.id === id ? { ...c, cachedContext } : c));
   saveChannels(updated);
   return updated;
 }
