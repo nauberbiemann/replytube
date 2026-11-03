@@ -43,8 +43,8 @@ Você recebe UM comentário e o título do vídeo onde ele foi feito. A resposta
 REGRA Nº 2 — NOME: se o nome for informado, use-o na primeira frase, de forma natural (sem "Fala"/"Olá").
 
 COMO RESPONDER CADA TIPO:
-- ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou e acrescente 1 informação útil ligada ao tema do vídeo. Nada de agradecimento vazio.
-- RESULTADO PESSOAL / DADO DO CARRO: valide e explique em 1 frase a relação com o tema do vídeo.
+- ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou; acrescente informação útil SÓ se couber no tamanho. Nada de agradecimento vazio.
+- RESULTADO PESSOAL / DADO DO CARRO (ex: "Meriva 1.8 2003"): uma frase ligando o carro dela ao tema do vídeo. Sem listar cuidados.
 - PERGUNTA: responda de forma direta e CORRETA para o caso exato (automático ≠ manual etc.). Se exigir mais que 2 frases, dê a dica principal e diga que vira vídeo.
 - DADO TÉCNICO / COMPLEMENTO: converse de igual para igual.
 - IRONIA OU ANALOGIA CONCORDANDO com o vídeo: NÃO rebata.
@@ -59,7 +59,7 @@ A) Gancho para próximos vídeos LIGADO ao assunto + bordão oficial do canal (s
 B) Pergunta curta e específica sobre o tema do vídeo.
 C) Frase técnica de conclusão que crava a tese do vídeo.
 
-TAMANHO: 2 a 3 frases.
+TAMANHO: siga RIGOROSAMENTE o limite de palavras indicado na mensagem. Menos é mais: comentário curto e simples pede resposta curta, direta e sem floreios (nada de explicar o óbvio, listar cuidados ou dar aula). Sem adjetivos de enfeite. O bordão do canal só no fechamento A, e no máximo uma vez.
 
 PAUTA ("suggestedTopic"): só se o comentário trouxer pergunta, pedido, caso real, comparação ou crítica que renda um vídeo NOVO; fiel ao que a pessoa disse. Senão "".
 MODO SOMENTE_PAUTA (resposta de terceiro): "reply" deve ser "", apenas avalie a pauta.
@@ -244,6 +244,15 @@ export async function POST(req: NextRequest) {
     const answers = await Promise.all(
       work.map(async (item, idx) => {
         const firstName = (item.personName || '').trim();
+        // Tamanho proporcional ao comentário (decidido pelo app, não pela IA)
+        const len = item.commentText.length;
+        const isQuestion = item.commentText.includes('?');
+        const size =
+          len <= 80 && !isQuestion
+            ? { words: 25, tokens: 120, label: '1 ou 2 frases curtas, MÁXIMO 25 palavras' }
+            : len <= 220
+            ? { words: 40, tokens: 180, label: '2 frases, MÁXIMO 40 palavras' }
+            : { words: 60, tokens: 260, label: 'até 3 frases, MÁXIMO 60 palavras' };
         const userText =
           item.mode === 'SOMENTE_PAUTA'
             ? `MODO: SOMENTE_PAUTA (resposta de terceiro; NÃO escreva reply)
@@ -252,6 +261,7 @@ Comentário de ${item.nickname}: "${item.commentText}"`
             : `VÍDEO DESTE COMENTÁRIO (o único tema permitido): "${item.videoTitle || 'não identificado'}"
 AUTOR: ${item.nickname}${firstName ? ` — chame-o de "${firstName}" na PRIMEIRA frase` : ' — sem nome identificável, não invente nome'}
 COMENTÁRIO: "${item.commentText}"
+TAMANHO: ${size.label}.
 FECHAMENTO A USAR: ${styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
 
         const completion = await openai.chat.completions.create({
@@ -259,7 +269,7 @@ FECHAMENTO A USAR: ${styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a aber
           temperature: 0.5,
           presence_penalty: 0.1,
           frequency_penalty: 0.2,
-          max_tokens: 400,
+          max_tokens: size.tokens + 80,
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: systemReply },
