@@ -725,6 +725,7 @@ export default function DashboardPage() {
                 activeChannelName={
                   channels.find((c) => c.id === selectedChannelId)?.name
                 }
+                activeChannelId={selectedChannelId}
                 onAddManualTopic={handleAddManualTopic}
                 onUpdateTopic={handleUpdateSavedTopic}
                 onRemoveTopic={(id) => handleRemoveSavedTopic(id)}

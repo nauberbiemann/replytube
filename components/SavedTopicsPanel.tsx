@@ -21,18 +21,32 @@ import {
 interface SavedTopicsPanelProps {
   topics: SavedTopic[];
   activeChannelName?: string;
+  activeChannelId?: string;
   onAddManualTopic: (title: string) => void;
   onUpdateTopic: (id: string, newTitle: string) => void;
   onRemoveTopic: (id: string) => void;
 }
 
 export function SavedTopicsPanel({
-  topics,
+  topics: allTopics,
   activeChannelName,
+  activeChannelId,
   onAddManualTopic,
   onUpdateTopic,
   onRemoveTopic,
 }: SavedTopicsPanelProps) {
+  const [showAllChannels, setShowAllChannels] = useState<boolean>(false);
+
+  // Temas do canal selecionado (match por ID; fallback por nome para temas sem ID)
+  const topics = useMemo(() => {
+    if (showAllChannels || (!activeChannelId && !activeChannelName)) return allTopics;
+    return allTopics.filter((t) =>
+      t.channelId
+        ? t.channelId === activeChannelId
+        : t.channelName === activeChannelName
+    );
+  }, [allTopics, showAllChannels, activeChannelId, activeChannelName]);
+
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [filterChannel, setFilterChannel] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -133,7 +147,8 @@ export function SavedTopicsPanel({
                 Banco de Temas dos Comentários
               </span>
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">
-                {topics.length} {topics.length === 1 ? 'tema salvo' : 'temas salvos'}
+                {topics.length} {topics.length === 1 ? 'tema' : 'temas'}
+                {!showAllChannels && activeChannelName ? ` · ${activeChannelName}` : ' · todos os canais'}
               </span>
               <span className="hidden sm:inline-flex items-center rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
                 ⚡ Salvo Automático & Permanente
@@ -167,7 +182,7 @@ export function SavedTopicsPanel({
                 />
               </div>
 
-              {channelNames.length > 1 && (
+              {showAllChannels && channelNames.length > 1 && (
                 <select
                   value={filterChannel}
                   onChange={(e) => setFilterChannel(e.target.value)}
@@ -184,6 +199,19 @@ export function SavedTopicsPanel({
             </div>
 
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAllChannels((v) => !v);
+                  setFilterChannel('ALL');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition"
+                title="Alternar entre os temas do canal selecionado e de todos os canais"
+              >
+                {showAllChannels
+                  ? `Só ${activeChannelName || 'canal atual'}`
+                  : `Ver todos os canais (${allTopics.length})`}
+              </button>
               <button
                 type="button"
                 onClick={handleCopyAll}

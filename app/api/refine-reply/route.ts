@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const model = getOpenAIModel(requestedModel);
 
     const compactDescription = context?.channelDescription
-      ? context.channelDescription.slice(0, 900)
+      ? context.channelDescription.slice(0, 6000)
       : '';
 
     const systemPrompt = `Você é o criador do canal no YouTube ajustando sua resposta a um inscrito.
