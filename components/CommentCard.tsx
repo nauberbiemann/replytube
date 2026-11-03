@@ -96,6 +96,11 @@ export function CommentCard({
             <p className="mt-1 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
               {item.commentText}
             </p>
+            {item.videoTitle && (
+              <p className="mt-1.5 text-[10px] text-muted-foreground" title="Vídeo usado como tema desta resposta">
+                🎬 Vídeo: <span className="text-foreground/80">{item.videoTitle}</span>
+              </p>
+            )}
           </div>
 
           {/* Selo de Tema Extraído / Salvo Automaticamente */}

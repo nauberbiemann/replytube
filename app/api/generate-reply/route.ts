@@ -4,46 +4,84 @@ import { ChannelContext } from '@/lib/types';
 import { validateAccess } from '@/lib/auth';
 
 /**
- * ORDEM DO PROMPT PENSADA PARA PROMPT CACHING DA OPENAI:
- * A OpenAI aplica desconto automático (50%) nos tokens de entrada quando o INÍCIO do prompt
- * (>= 1024 tokens) é idêntico ao de requisições recentes. Por isso:
- *   1) Regras fixas (idênticas para todos os canais)  -> início
- *   2) Perfil do canal (idêntico para o mesmo canal)  -> meio
- *   3) Dados variáveis (vídeo, histórico, print)       -> mensagem do usuário (fim)
+ * PIPELINE EM 2 ETAPAS (resolve a mistura de temas entre vídeos):
+ *
+ * ETAPA 1 — LEITURA (com imagem, prompt mínimo, SEM perfil do canal):
+ *   Só transcreve o print: autor, texto, título do vídeo de CADA comentário, se é resposta de terceiro,
+ *   se já foi respondido pelo canal. Não escreve respostas — assim o modelo foca 100% em ler certo.
+ *
+ * ETAPA 2 — RESPOSTA (só texto, sem imagem):
+ *   Recebe os comentários AGRUPADOS POR VÍDEO, cada bloco com o seu título explícito,
+ *   e escreve as respostas. Sem imagem, o modelo não "vaza" assunto de uma linha para outra.
+ *
+ * Custo: a imagem é paga uma vez só (etapa 1). A etapa 2 é texto puro com prefixo fixo
+ * (elegível a prompt caching). Ver tokens reais no aviso após cada geração.
  */
-const STATIC_RULES = `Você é o criador do canal no YouTube respondendo comentários com voz humana, específica e tecnicamente correta.
 
-COMO RESPONDER CADA TIPO DE COMENTÁRIO:
-- ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou (ex: "o gráfico das peças", "economizou 15%", "acabou de se inscrever") e acrescente 1 informação útil ou bastidor curto ligado ao tema do vídeo. Nada de agradecimento vazio.
-- RESULTADO PESSOAL (ex: "economizei 15%"): valide o número, explique em 1 frase POR QUE funcionou (o mecanismo técnico) e puxe o próximo passo.
-- PERGUNTA: responda de forma direta e CORRETA para o caso exato perguntado (ex: carro automático ≠ manual; não dê dica de troca de marcha para câmbio automático). Se a resposta exigir mais que 2 frases, dê a dica principal e diga que vira vídeo.
-- DADO TÉCNICO / COMPLEMENTO: converse de igual para igual, valide e acrescente um ponto.
-- IRONIA OU ANALOGIA CONCORDANDO com o vídeo: NÃO rebata; valide a analogia e conecte ao fato técnico.
-- DISCORDÂNCIA REAL: rebata com respeito e com dado do vídeo.
-- Nunca invente fatos, números ou promessas que não estejam no comentário, no vídeo ou nas diretrizes do canal.
+const EXTRACT_PROMPT = `Você transcreve prints do YouTube Studio (aba Comentários). NÃO escreva respostas, apenas leia.
 
-PROIBIDO (aberturas e fechamentos genéricos de IA):
-"Fico muito feliz", "Fico feliz em saber", "Que notícia fantástica", "Muito obrigado pela inscrição", "Espero que tenha gostado", "você levanta um ponto crucial", "ótima observação", "excelente ponto", "Fala [Nome]!", "Olá [Nome]!", "Continue assim!", "Continue acompanhando a gente!", "Vamos continuar debatendo", "O mercado é dinâmico".
-Use o primeiro nome da pessoa de forma natural no meio ou no começo da frase, reagindo ao conteúdo.
+Para CADA comentário visível, de cima para baixo:
+- nickname: o @ do autor.
+- personName: primeiro nome provável (a partir do @ ou da assinatura do texto), ou vazio.
+- commentText: texto exato.
+- videoTitle: título do vídeo que aparece NA MESMA LINHA, à direita (coluna "Conteúdo", ao lado da miniatura). Cada comentário pode ser de um vídeo diferente — leia o título da linha DELE. Copie o texto como aparece (pode estar cortado com "...").
+- kind:
+  "principal" = comentário de nível superior (avatar alinhado à esquerda, sem recuo);
+  "terceiro" = resposta recuada abaixo de um comentário, escrita por outra pessoa;
+  "canal" = resposta recuada escrita pelo PRÓPRIO canal (nome com selo/destaque).
+- parentNickname: para "terceiro" e "canal", o @ do comentário principal ao qual responde.
+Ignore as sugestões automáticas de resposta do YouTube (caixas cinzas com textos prontos) e botões.
 
-FECHAMENTO OBRIGATÓRIO — escolha 1 e VARIE entre os comentários do mesmo print:
-A) Gancho para próximos vídeos do canal LIGADO ao assunto do comentário + bordão oficial do canal (se existir nas diretrizes).
-B) Pergunta curta e específica sobre o tema do vídeo que a pessoa consiga responder.
-C) Frase técnica de conclusão que crava a tese do vídeo.
+Retorne APENAS JSON:
+{"items":[{"nickname":"@x","personName":"","commentText":"","videoTitle":"","kind":"principal|terceiro|canal","parentNickname":""}]}`;
+
+const REPLY_RULES = `Você é o criador do canal no YouTube respondendo comentários com voz humana, específica e tecnicamente correta.
+
+REGRA Nº 1 — UM VÍDEO POR COMENTÁRIO:
+Os comentários chegam agrupados por vídeo. Responda cada comentário SOMENTE com base no título do vídeo do SEU bloco e no que a pessoa escreveu. É PROIBIDO trazer assunto de outro bloco/vídeo (ex: falar de troca de óleo num comentário de um vídeo sobre desligar o carro, só porque outro comentário falou de óleo). Se o comentário for curto (ex: "Logan 2020 com 313 mil km"), conecte o dado da pessoa ao tema do vídeo DELA.
+
+COMO RESPONDER CADA TIPO:
+- ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou e acrescente 1 informação útil ligada ao tema do vídeo. Nada de agradecimento vazio.
+- RESULTADO PESSOAL / DADO DO CARRO: valide e explique em 1 frase a relação com o tema do vídeo.
+- PERGUNTA: responda de forma direta e CORRETA para o caso exato (automático ≠ manual etc.). Se exigir mais que 2 frases, dê a dica principal e diga que vira vídeo.
+- DADO TÉCNICO / COMPLEMENTO: converse de igual para igual.
+- IRONIA OU ANALOGIA CONCORDANDO com o vídeo: NÃO rebata.
+- DISCORDÂNCIA REAL: rebata com respeito e com o argumento do vídeo.
+- Nunca invente fatos, números ou promessas.
+
+PROIBIDO: "Fico muito feliz", "Fico feliz em saber", "Que notícia fantástica", "marca impressionante", "Muito obrigado pela inscrição", "Espero que tenha gostado", "ponto crucial", "ótima observação", "excelente ponto", "Fala [Nome]!", "Olá [Nome]!", "Continue assim!", "Continue acompanhando a gente!", "Vamos continuar debatendo".
+Use o primeiro nome de forma natural.
+
+FECHAMENTO — escolha 1 e VARIE entre os comentários:
+A) Gancho para próximos vídeos LIGADO ao assunto + bordão oficial do canal (se existir nas diretrizes).
+B) Pergunta curta e específica sobre o tema do vídeo daquele comentário.
+C) Frase técnica de conclusão que crava a tese do vídeo daquele comentário.
 
 TAMANHO: 2 a 3 frases.
 
-PAUTA ("suggestedTopic"): só preencha se o comentário trouxer pergunta, pedido, caso real, comparação ou crítica que renda um vídeo NOVO. O tema deve refletir fielmente o que a pessoa disse, sem exagerar. Elogio simples -> "".
+PAUTA ("suggestedTopic"): só se o comentário trouxer pergunta, pedido, caso real, comparação ou crítica que renda um vídeo NOVO; fiel ao que a pessoa disse. Senão "".
+Itens marcados "SOMENTE_PAUTA" (respostas de terceiros): NÃO escreva resposta ("reply": ""), apenas avalie a pauta.
 
-VÁRIOS COMENTÁRIOS NO PRINT (YouTube Studio):
-1. VÍDEO DE CADA COMENTÁRIO: cada linha mostra, à DIREITA, a miniatura e o título do vídeo daquele comentário. Leia esse título para CADA comentário e preencha "videoTitle". A resposta de cada comentário deve tratar SOMENTE do tema do SEU vídeo — nunca misture assuntos de vídeos diferentes, mesmo que estejam no mesmo print.
-2. SÓ COMENTÁRIOS PRINCIPAIS viram resposta: crie um item em "comments" apenas para comentários de nível superior (alinhados à esquerda, com avatar grande).
-3. RESPOSTAS DE TERCEIROS (recuadas/abaixo de um comentário, de outra pessoa que não o canal): NÃO responda. Se trouxerem pergunta, pedido, caso real ou debate que renda um vídeo novo, coloque em "replyTopics"; caso contrário, ignore.
-4. Se abaixo do comentário já houver uma resposta do PRÓPRIO CANAL, marque "alreadyAnswered": true.
-5. Ignore as sugestões automáticas de resposta do YouTube (caixinhas cinzas com textos prontos).
+Retorne APENAS JSON, um item para cada "ref" recebido, na mesma ordem:
+{"results":[{"ref":1,"suggestedTopic":"","closingStyle":"A|B|C","reply":""}]}`;
 
-Retorne APENAS JSON:
-{"detectedVideoTitle":"título do vídeo se houver só um no print, senão vazio","comments":[{"nickname":"@usuario","personName":"Primeiro nome","videoTitle":"título do vídeo DESTE comentário","commentText":"texto exato","alreadyAnswered":false,"suggestedTopic":"pauta ou vazio","closingStyle":"A|B|C","reply":"resposta sobre o tema do vídeo DESTE comentário"}],"replyTopics":[{"nickname":"@terceiro","commentText":"texto exato da resposta de terceiro","videoTitle":"vídeo","suggestedTopic":"pauta"}]}`;
+function buildChannelProfile(context: ChannelContext): string {
+  const desc = (context.channelDescription || '').slice(0, 6000);
+  return `PERFIL DO CANAL:
+- Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico e autêntico'}
+- Público: ${context.publico || 'Entusiastas'} | Temas: ${(context.temasChave || []).join(', ')}
+${context.resumo ? `- Resumo: ${context.resumo}` : ''}
+${desc ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integralmente):\n"""\n${desc}\n"""` : ''}`;
+}
+
+type Extracted = {
+  nickname: string;
+  personName: string;
+  commentText: string;
+  videoTitle: string;
+  kind: 'principal' | 'terceiro' | 'canal';
+  parentNickname: string;
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -75,12 +113,8 @@ export async function POST(req: NextRequest) {
     };
 
     if (!context) {
-      return NextResponse.json(
-        { error: 'Contexto do canal não informado.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Contexto do canal não informado.' }, { status: 400 });
     }
-
     if (!commentImageDataUrl && !commentTextFallback?.trim()) {
       return NextResponse.json(
         { error: 'Envie um print do comentário ou preencha o texto de fallback.' },
@@ -90,133 +124,186 @@ export async function POST(req: NextRequest) {
 
     const openai = getOpenAIClient();
     const model = getOpenAIModel(requestedModel);
+    const manualTitle = videoTitle?.trim() || '';
+    const typedText = commentTextFallback?.trim() || '';
+    const hasImage = Boolean(commentImageDataUrl && commentImageDataUrl.startsWith('data:image'));
 
-    const channelDescription = (context.channelDescription || '').slice(0, 6000);
+    let inputTokens = 0;
+    let cachedTokens = 0;
+    let outputTokens = 0;
+    const addUsage = (u: any) => {
+      inputTokens += u?.prompt_tokens ?? 0;
+      cachedTokens += u?.prompt_tokens_details?.cached_tokens ?? 0;
+      outputTokens += u?.completion_tokens ?? 0;
+    };
 
-    // Bloco 2: perfil do canal (estável para o mesmo canal -> cacheável)
-    const channelProfile = `PERFIL DO CANAL:
-- Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico e autêntico'}
-- Público: ${context.publico || 'Entusiastas'} | Temas: ${(context.temasChave || []).join(', ')}
-${context.resumo ? `- Resumo: ${context.resumo}` : ''}
-${channelDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integralmente):\n"""\n${channelDescription}\n"""` : ''}`;
+    // ---------------- ETAPA 1: LEITURA DO PRINT ----------------
+    let extracted: Extracted[] = [];
 
-    const systemPrompt = `${STATIC_RULES}\n\n${channelProfile}`;
-
-    // Bloco 3: dados variáveis (sempre no fim / mensagem do usuário)
-    const hasTypedText = Boolean(commentTextFallback?.trim());
-    let textInstruction = `TEMA DO VÍDEO: ${
-      videoTitle?.trim()
-        ? `"${videoTitle.trim()}" (use SOMENTE para comentários cujo vídeo não esteja visível no print; se o print mostrar o título ao lado do comentário, o título do print prevalece)`
-        : 'leia o título do vídeo exibido à direita de CADA comentário no print'
-    }`;
-    if (recentReplies && recentReplies.length > 0) {
-      textInstruction += `\nÚLTIMAS RESPOSTAS (não repita abertura nem fechamento):\n${recentReplies
-        .slice(0, 2)
-        .map((r) => `- "${r.slice(0, 140)}"`)
-        .join('\n')}`;
-    }
-    if (hasTypedText) {
-      textInstruction += `\nTEXTO DO COMENTÁRIO (use este texto; a imagem serve só para identificar o autor):\n"""${commentTextFallback!.trim()}"""`;
-    }
-
-    const userContentParts: any[] = [{ type: 'text', text: textInstruction }];
-
-    if (commentImageDataUrl && commentImageDataUrl.startsWith('data:image')) {
-      userContentParts.push({
-        type: 'image_url',
-        image_url: {
-          url: commentImageDataUrl,
-          // Se o texto já foi digitado, basta baixa resolução para ler o nome (custo fixo mínimo)
-          detail: hasTypedText ? 'low' : 'high',
-        },
-      });
-    }
-
-    // Print do vídeo só é útil se não houver título digitado (evita pagar imagem à toa)
-    if (
-      !videoTitle?.trim() &&
-      videoImageDataUrl &&
-      videoImageDataUrl.startsWith('data:image')
-    ) {
-      userContentParts.push({
-        type: 'image_url',
-        image_url: { url: videoImageDataUrl, detail: 'low' },
-      });
-    }
-
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature: 0.6,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.1,
-      max_tokens: 1800,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContentParts },
-      ],
-    });
-
-    const responseContent = completion.choices[0]?.message?.content;
-    if (!responseContent) {
-      throw new Error('Nenhuma resposta retornada pela OpenAI.');
-    }
-
-    const parsed = JSON.parse(responseContent);
-
-    const rawComments: any[] = Array.isArray(parsed.comments)
-      ? parsed.comments
-      : parsed.commentText || parsed.reply
-      ? [parsed]
-      : [];
-
-    const allComments = rawComments
-      .map((c) => ({
-        nickname: c.nickname || 'Espectador',
-        personName: c.personName || '',
-        commentText: c.commentText || commentTextFallback || '',
-        videoTitle: c.videoTitle || parsed.detectedVideoTitle || videoTitle?.trim() || '',
-        suggestedTopic: c.suggestedTopic || '',
-        reply: c.reply || '',
-        alreadyAnswered: c.alreadyAnswered === true,
-      }))
-      .filter((c) => c.commentText.trim() || c.reply.trim());
-
-    const skippedAnswered = allComments.filter((c) => c.alreadyAnswered).length;
-    const validComments = allComments.filter((c) => !c.alreadyAnswered);
-
-    const replyTopics = (Array.isArray(parsed.replyTopics) ? parsed.replyTopics : [])
-      .map((r: any) => ({
-        nickname: r.nickname || 'Inscrito',
-        commentText: r.commentText || '',
-        videoTitle: r.videoTitle || parsed.detectedVideoTitle || '',
-        suggestedTopic: (r.suggestedTopic || '').trim(),
-      }))
-      .filter((r: any) => r.suggestedTopic.length > 5);
-
-    if (validComments.length === 0 && replyTopics.length === 0 && skippedAnswered === 0) {
-      return NextResponse.json(
+    if (hasImage) {
+      const parts: any[] = [
         {
-          error:
-            'Não foi possível identificar o texto do print. Cole o texto abaixo e clique em Gerar.',
+          type: 'text',
+          text: typedText
+            ? `O texto do comentário foi digitado pelo criador (use-o como commentText): """${typedText}"""\nDo print, leia apenas autor e título do vídeo.`
+            : 'Transcreva o print.',
         },
+        {
+          type: 'image_url',
+          image_url: { url: commentImageDataUrl, detail: typedText ? 'low' : 'high' },
+        },
+      ];
+      if (!manualTitle && videoImageDataUrl && videoImageDataUrl.startsWith('data:image')) {
+        parts.push({ type: 'image_url', image_url: { url: videoImageDataUrl, detail: 'low' } });
+      }
+
+      const extraction = await openai.chat.completions.create({
+        model,
+        temperature: 0,
+        max_tokens: 1500,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: EXTRACT_PROMPT },
+          { role: 'user', content: parts },
+        ],
+      });
+      addUsage(extraction.usage);
+
+      const raw = JSON.parse(extraction.choices[0]?.message?.content || '{}');
+      extracted = (Array.isArray(raw.items) ? raw.items : [])
+        .map((i: any) => ({
+          nickname: i.nickname || 'Espectador',
+          personName: i.personName || '',
+          commentText: (i.commentText || '').trim(),
+          videoTitle: (i.videoTitle || '').trim(),
+          kind: ['principal', 'terceiro', 'canal'].includes(i.kind) ? i.kind : 'principal',
+          parentNickname: i.parentNickname || '',
+        }))
+        .filter((i: Extracted) => i.commentText);
+    } else {
+      extracted = [
+        {
+          nickname: 'Espectador',
+          personName: '',
+          commentText: typedText,
+          videoTitle: manualTitle,
+          kind: 'principal',
+          parentNickname: '',
+        },
+      ];
+    }
+
+    if (extracted.length === 0) {
+      return NextResponse.json(
+        { error: 'Não foi possível identificar o texto do print. Cole o texto abaixo e clique em Gerar.' },
         { status: 422 }
       );
     }
 
-    const usage = completion.usage as any;
+    // título: o do print prevalece; o campo manual só preenche quando o print não mostra
+    extracted.forEach((i) => {
+      if (!i.videoTitle) i.videoTitle = manualTitle;
+    });
+
+    // comentários principais já respondidos pelo canal
+    const answeredParents = new Set(
+      extracted.filter((i) => i.kind === 'canal').map((i) => i.parentNickname.toLowerCase())
+    );
+    const toReply = extracted.filter(
+      (i) => i.kind === 'principal' && !answeredParents.has(i.nickname.toLowerCase())
+    );
+    const skippedAnswered = extracted.filter(
+      (i) => i.kind === 'principal' && answeredParents.has(i.nickname.toLowerCase())
+    ).length;
+    const thirdParty = extracted.filter((i) => i.kind === 'terceiro');
+
+    const work = [
+      ...toReply.map((i) => ({ ...i, mode: 'RESPONDER' as const })),
+      ...thirdParty.map((i) => ({ ...i, mode: 'SOMENTE_PAUTA' as const })),
+    ];
+
+    if (work.length === 0) {
+      return NextResponse.json({
+        detectedVideoTitle: '',
+        comments: [],
+        replyTopics: [],
+        skippedAnswered,
+        usage: { model, inputTokens, cachedTokens, outputTokens },
+      });
+    }
+
+    // ---------------- ETAPA 2: RESPOSTAS (texto puro, agrupado por vídeo) ----------------
+    const groups = new Map<string, { ref: number; item: (typeof work)[number] }[]>();
+    work.forEach((item, idx) => {
+      const key = item.videoTitle || '(título do vídeo não identificado)';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push({ ref: idx + 1, item });
+    });
+
+    let userText = '';
+    groups.forEach((entries, title) => {
+      userText += `\n=== VÍDEO: "${title}" ===\n`;
+      entries.forEach(({ ref, item }) => {
+        userText += `[ref ${ref}] ${item.mode} | ${item.nickname}${item.personName ? ` (${item.personName})` : ''}: "${item.commentText}"\n`;
+      });
+    });
+    if (recentReplies && recentReplies.length > 0) {
+      userText += `\nÚLTIMAS RESPOSTAS (não repita abertura nem fechamento):\n${recentReplies
+        .slice(0, 2)
+        .map((r) => `- "${r.slice(0, 140)}"`)
+        .join('\n')}`;
+    }
+
+    const replyCompletion = await openai.chat.completions.create({
+      model,
+      temperature: 0.5,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.2,
+      max_tokens: 1800,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: `${REPLY_RULES}\n\n${buildChannelProfile(context)}` },
+        { role: 'user', content: userText.trim() },
+      ],
+    });
+    addUsage(replyCompletion.usage);
+
+    const rawReplies = JSON.parse(replyCompletion.choices[0]?.message?.content || '{}');
+    const results: any[] = Array.isArray(rawReplies.results) ? rawReplies.results : [];
+    const byRef = new Map<number, any>();
+    results.forEach((r, idx) => byRef.set(Number(r.ref) || idx + 1, r));
+
+    const comments: any[] = [];
+    const replyTopics: any[] = [];
+    work.forEach((item, idx) => {
+      const r = byRef.get(idx + 1) || {};
+      if (item.mode === 'RESPONDER') {
+        comments.push({
+          nickname: item.nickname,
+          personName: item.personName,
+          commentText: item.commentText,
+          videoTitle: item.videoTitle,
+          suggestedTopic: (r.suggestedTopic || '').trim(),
+          reply: (r.reply || '').trim(),
+        });
+      } else if ((r.suggestedTopic || '').trim().length > 5) {
+        replyTopics.push({
+          nickname: item.nickname,
+          commentText: item.commentText,
+          videoTitle: item.videoTitle,
+          suggestedTopic: r.suggestedTopic.trim(),
+        });
+      }
+    });
+
+    const distinctTitles = Array.from(new Set(extracted.map((i) => i.videoTitle).filter(Boolean)));
 
     return NextResponse.json({
-      detectedVideoTitle: parsed.detectedVideoTitle || '',
-      comments: validComments,
+      detectedVideoTitle: distinctTitles.length === 1 ? distinctTitles[0] : '',
+      comments,
       replyTopics,
       skippedAnswered,
-      usage: {
-        model,
-        inputTokens: usage?.prompt_tokens ?? 0,
-        cachedTokens: usage?.prompt_tokens_details?.cached_tokens ?? 0,
-        outputTokens: usage?.completion_tokens ?? 0,
-      },
+      usage: { model, inputTokens, cachedTokens, outputTokens },
     });
   } catch (error: any) {
     console.error('Erro em /api/generate-reply:', error);
