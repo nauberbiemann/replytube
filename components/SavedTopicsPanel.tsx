@@ -328,6 +328,11 @@ export function SavedTopicsPanel({
                         <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/20">
                           {topic.channelName}
                         </span>
+                        {topic.origin === 'mina' && (
+                          <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-purple-300 border border-purple-500/30">
+                            💎 Mina{topic.potential ? ` · ${topic.potential}` : ''}
+                          </span>
+                        )}
                         <span className="text-[10px] text-muted-foreground">
                           {new Date(topic.createdAt).toLocaleDateString('pt-BR')}
                         </span>

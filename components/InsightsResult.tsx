@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  Channel,
   InsightsAnalysisResult,
   ContentIdea,
   PainPoint,
@@ -36,6 +37,12 @@ function formatNumber(num: number): string {
   return num.toLocaleString('pt-BR');
 }
 
+export type SaveMinaIdeasFn = (
+  targetChannelId: string,
+  ideas: ContentIdea[],
+  data: InsightsAnalysisResult
+) => { savedMap: Record<string, string>; created: number; dupes: number };
+
 interface InsightsResultProps {
   data: InsightsAnalysisResult;
   onReset: () => void;
@@ -46,14 +53,41 @@ interface InsightsResultProps {
     targetPainOrExpectation?: string;
     format?: string;
   }) => void;
+  channels?: Channel[];
+  defaultChannelId?: string;
+  onSaveIdeas?: SaveMinaIdeasFn;
 }
 
 export function InsightsResult({
   data,
   onReset,
   onGenerateScript,
+  channels = [],
+  defaultChannelId = '',
+  onSaveIdeas,
 }: InsightsResultProps) {
   const [copied, setCopied] = useState(false);
+  const [targetChannelId, setTargetChannelId] = useState<string>(defaultChannelId);
+  // ideia (id) -> salva; reinicia quando muda a análise
+  const [savedIdeas, setSavedIdeas] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setSavedIdeas({});
+  }, [data.analyzedAt]);
+  useEffect(() => {
+    if (!targetChannelId && defaultChannelId) setTargetChannelId(defaultChannelId);
+  }, [defaultChannelId, targetChannelId]);
+
+  const saveIdeas = (ideas: ContentIdea[]) => {
+    if (!onSaveIdeas || !targetChannelId) return;
+    const pending = ideas.filter((i) => !savedIdeas[i.id]);
+    if (pending.length === 0) return;
+    const res = onSaveIdeas(targetChannelId, pending, data);
+    setSavedIdeas((prev) => {
+      const next = { ...prev };
+      Object.keys(res.savedMap).forEach((k) => (next[k] = true));
+      return next;
+    });
+  };
 
   const generateMarkdownReport = (): string => {
     return `# 💎 MINA DE OURO - Relatório de Audiência & Ideias de Conteúdo
@@ -361,6 +395,35 @@ ${data.contentIdeas
           </span>
         </div>
 
+        {onSaveIdeas && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-purple-500/30 bg-purple-500/5 px-3 py-2 text-xs">
+            <span className="font-semibold text-foreground">📌 Salvar ideias no Banco de Temas do canal:</span>
+            <select
+              value={targetChannelId}
+              onChange={(e) => setTargetChannelId(e.target.value)}
+              className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground"
+            >
+              {channels.length === 0 && <option value="">Cadastre um canal na aba Respostas</option>}
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!targetChannelId || data.contentIdeas.every((i) => savedIdeas[i.id])}
+              onClick={() => saveIdeas(data.contentIdeas)}
+              className="rounded-lg bg-purple-600 px-3 py-1 font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+            >
+              {data.contentIdeas.every((i) => savedIdeas[i.id]) ? '✓ Todas salvas' : 'Salvar todas'}
+            </button>
+            <span className="text-muted-foreground">
+              Vão para a aba do canal na planilha marcadas como 💎 Mina (repetidas são ignoradas).
+            </span>
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2">
           {data.contentIdeas.map((idea) => {
             const potentialBadge =
@@ -414,7 +477,19 @@ ${data.contentIdeas
                   </div>
                 </div>
 
-                <div className="pt-4 mt-3 border-t border-border">
+                <div className="pt-4 mt-3 border-t border-border space-y-2">
+                  {onSaveIdeas && (
+                    <button
+                      type="button"
+                      disabled={!targetChannelId || savedIdeas[idea.id]}
+                      onClick={() => saveIdeas([idea])}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-purple-500/40 bg-purple-500/10 py-2 text-xs font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/20 transition disabled:opacity-60"
+                    >
+                      {savedIdeas[idea.id]
+                        ? '✓ Salva no Banco de Temas'
+                        : `📌 Salvar em ${channels.find((c) => c.id === targetChannelId)?.name || 'canal'}`}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() =>

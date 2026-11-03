@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChannelContext, InsightsAnalysisResult, ScriptOutline } from '@/lib/types';
+import { Channel, ChannelContext, InsightsAnalysisResult, ScriptOutline } from '@/lib/types';
 import { YouTubeApiKeyModal } from './YouTubeApiKeyModal';
 import { ScriptModal } from './ScriptModal';
-import { InsightsResult } from './InsightsResult';
+import { InsightsResult, SaveMinaIdeasFn } from './InsightsResult';
 import {
   Sparkles,
   Youtube,
@@ -26,12 +26,18 @@ interface InsightsViewProps {
   appPassword?: string;
   channelContext?: ChannelContext | null;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  channels?: Channel[];
+  selectedChannelId?: string;
+  onSaveMinaIdeas?: SaveMinaIdeasFn;
 }
 
 export function InsightsView({
   appPassword = '',
   channelContext,
   addToast,
+  channels = [],
+  selectedChannelId = '',
+  onSaveMinaIdeas,
 }: InsightsViewProps) {
   const [inputMode, setInputMode] = useState<'channel' | 'video' | 'manual'>('channel');
 
@@ -387,6 +393,9 @@ export function InsightsView({
           data={analysisResult}
           onReset={handleResetAnalysis}
           onGenerateScript={handleGenerateScript}
+          channels={channels}
+          defaultChannelId={selectedChannelId}
+          onSaveIdeas={onSaveMinaIdeas}
         />
       ) : (
         /* Painel de Configuração e Entrada */

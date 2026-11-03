@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Channel, ChannelContext, CommentItem, SavedTopic } from '@/lib/types';
+import { Channel, ChannelContext, CommentItem, SavedTopic, ContentIdea, InsightsAnalysisResult } from '@/lib/types';
 import {
   getStoredChannels,
   createChannel,
@@ -576,6 +576,84 @@ export default function DashboardPage() {
   };
 
   // Gerenciamento do Banco de Temas Salvos
+  const loggedMiningsRef = useRef<Set<string>>(new Set());
+
+  const buildInterestRanking = (data: InsightsAnalysisResult): string => {
+    const weight = { alta: 3, media: 2, baixa: 1 } as const;
+    const flames = (lvl: 'alta' | 'media' | 'baixa') => '🔥'.repeat(weight[lvl] || 1);
+    const items = [
+      ...data.pains.map((p) => ({ kind: 'Dor', topic: p.topic, lvl: p.intensity, ev: p.evidence?.length || 0 })),
+      ...data.expectations.map((e) => ({ kind: 'Pedido', topic: e.topic, lvl: e.frequency, ev: e.evidence?.length || 0 })),
+    ];
+    return items
+      .sort((a, b) => (weight[b.lvl] || 1) * 10 + b.ev - ((weight[a.lvl] || 1) * 10 + a.ev))
+      .slice(0, 6)
+      .map((i) => `${flames(i.lvl)} ${i.kind}: ${i.topic}${i.ev ? ` (${i.ev} evid.)` : ''}`)
+      .join('\n');
+  };
+
+  const handleSaveMinaIdeas = (
+    targetChannelId: string,
+    ideas: ContentIdea[],
+    data: InsightsAnalysisResult
+  ): { savedMap: Record<string, string>; created: number; dupes: number } => {
+    const ch = getStoredChannels().find((c) => c.id === targetChannelId);
+    const channelName = ch?.name || 'Geral';
+    const analyzedLabel = [data.channelTitle, data.videoTitle].filter(Boolean).join(' — ') || 'Mina de Ouro';
+    const savedMap: Record<string, string> = {};
+    const created: SavedTopic[] = [];
+    let dupes = 0;
+    let latest = getStoredTopics();
+
+    for (const idea of ideas) {
+      const result = addSavedTopic({
+        channelId: targetChannelId || undefined,
+        channelName,
+        topicTitle: idea.title,
+        commentText: idea.targetPainOrExpectation ? `Resolve: ${idea.targetPainOrExpectation}` : '',
+        nickname: `💎 Mina: ${data.channelTitle || 'análise'}`,
+        sourceVideoTitle: data.videoTitle || '',
+        origin: 'mina',
+        format: idea.format,
+        potential: idea.potential,
+        hook: idea.hook,
+        referenceUrl: data.videoUrl || '',
+      });
+      savedMap[idea.id] = result.saved.id;
+      latest = result.list;
+      if (result.alreadyExisted) dupes++;
+      else created.push(result.saved);
+    }
+    setSavedTopics(latest);
+
+    if (created.length > 0) syncToSheets({ action: 'upsert', topics: created });
+
+    // Registro mínimo da mineração (1 linha por análise, só quando algo é salvo)
+    const miningId = `${data.analyzedAt}|${data.videoUrl || data.videoTitle || ''}`;
+    if (created.length > 0 && !loggedMiningsRef.current.has(miningId)) {
+      loggedMiningsRef.current.add(miningId);
+      const s = data.summary;
+      syncToSheets({
+        action: 'logMining',
+        mining: {
+          id: miningId,
+          analyzedAt: data.analyzedAt,
+          channelName,
+          analyzedLabel,
+          url: data.videoUrl || '',
+          insight: `${s.sentimentBreakdown.positive}% positivo · ${s.sentimentBreakdown.neutral}% neutro · ${s.sentimentBreakdown.negative}% negativo — ${s.keyTakeaway}`,
+          interestRanking: buildInterestRanking(data),
+        },
+      });
+    }
+
+    addToast(
+      `${created.length} ideia(s) salva(s) em ${channelName}${dupes ? ` · ${dupes} já existia(m)` : ''}.`,
+      'success'
+    );
+    return { savedMap, created: created.length, dupes };
+  };
+
   const handleSyncAllToSheets = async () => {
     const all = getStoredTopics();
     if (all.length === 0) return;
@@ -859,6 +937,9 @@ export default function DashboardPage() {
             appPassword={appPassword}
             channelContext={channelContext}
             addToast={addToast}
+            channels={channels}
+            selectedChannelId={selectedChannelId}
+            onSaveMinaIdeas={handleSaveMinaIdeas}
           />
         ) : (
           <EvergreenView

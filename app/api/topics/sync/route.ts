@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { action } = body as { action: 'upsert' | 'delete' | 'list' };
-    if (!['upsert', 'delete', 'list'].includes(action)) {
+    const { action } = body as { action: 'upsert' | 'delete' | 'list' | 'logMining' };
+    if (!['upsert', 'delete', 'list', 'logMining'].includes(action)) {
       return NextResponse.json({ ok: false, error: 'Ação inválida.' }, { status: 400 });
     }
 

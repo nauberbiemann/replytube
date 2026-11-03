@@ -1,24 +1,27 @@
 /**
- * ReplyTube -> Google Sheets (Banco de Temas, uma aba por canal)
+ * ReplyTube -> Google Sheets (Banco de Temas, uma aba por canal + aba "Minerações")
  *
- * COMO INSTALAR (5 minutos, uma única vez):
- * 1. Crie uma planilha nova no Google Sheets (ex: "ReplyTube - Banco de Temas").
- * 2. Menu Extensões > Apps Script. Apague o conteúdo e cole ESTE arquivo inteiro.
- * 3. Troque o valor de SECRET abaixo por uma senha longa sua (a mesma vai na Vercel).
- * 4. Clique em Implantar > Nova implantação > tipo "App da Web":
- *      - Executar como: Eu
- *      - Quem pode acessar: Qualquer pessoa
- *    Autorize o acesso e copie a URL que termina em /exec.
- * 5. Na Vercel (Settings > Environment Variables) crie:
- *      GOOGLE_SHEETS_WEBHOOK_URL = URL /exec copiada
- *      GOOGLE_SHEETS_SECRET      = mesmo valor de SECRET
- *    e faça Redeploy.
+ * COMO INSTALAR / ATUALIZAR:
+ * 1. Na planilha: Extensões > Apps Script. Apague tudo (Ctrl+A, Delete) e cole ESTE arquivo inteiro.
+ * 2. Confira a linha do SECRET (deve ser igual a GOOGLE_SHEETS_SECRET na Vercel).
+ * 3. Salve (Ctrl+S).
+ * 4. Primeira vez: Implantar > Nova implantação > App da Web (Executar como: Eu / Acesso: Qualquer pessoa).
+ *    Atualização: Implantar > Gerenciar implantações > lápis > Versão: "Nova versão" > Implantar
+ *    (a URL continua a mesma; nada muda na Vercel).
  *
- * A URL fica só no servidor (nunca no navegador) e toda chamada exige o SECRET.
+ * Colunas das abas de canal (as novas ficam DEPOIS de Status para não bagunçar abas antigas):
+ * A ID (oculta) | B Data | C Tema | D Inscrito/Fonte | E Comentário / Dor atendida | F Vídeo de Origem
+ * G Status (edite à vontade, o app nunca sobrescreve) | H Origem | I Formato | J Potencial | K Gancho | L Link
  */
 
-const SECRET = 'TROQUE-POR-UMA-SENHA-LONGA';
-const HEADERS = ['ID', 'Data', 'Tema Sugerido', 'Inscrito', 'Comentário Original', 'Vídeo de Origem', 'Status'];
+const SECRET = 'TROQUE-POR-UMA-SENHA-LONGA'; // mantenha a SUA senha aqui (a mesma da Vercel)
+const HEADERS = [
+  'ID', 'Data', 'Tema Sugerido', 'Inscrito / Fonte', 'Comentário Original / Dor atendida',
+  'Vídeo de Origem', 'Status', 'Origem', 'Formato', 'Potencial', 'Gancho (0-15s)', 'Link de Referência',
+];
+const STATUS_COL = 7;
+const MINING_SHEET = 'Minerações';
+const MINING_HEADERS = ['ID', 'Data', 'Canal de Destino', 'Conteúdo Analisado', 'Sentimento & Insight', 'Interesse da Audiência (maior → menor)'];
 
 function doPost(e) {
   try {
@@ -38,14 +41,21 @@ function doPost(e) {
       return json_({ ok: true });
     }
 
+    if (body.action === 'logMining') {
+      logMining_(ss, body.mining || {});
+      return json_({ ok: true });
+    }
+
     if (body.action === 'list') {
       const all = [];
       ss.getSheets().forEach(function (sh) {
+        if (sh.getName() === MINING_SHEET) return;
         const values = sh.getDataRange().getValues();
         if (values.length < 2 || values[0][0] !== 'ID') return;
         for (var i = 1; i < values.length; i++) {
           const r = values[i];
           if (!r[0]) continue;
+          const isMina = String(r[7] || '').indexOf('Mina') !== -1;
           all.push({
             id: String(r[0]),
             createdAt: r[1] instanceof Date ? r[1].toISOString() : String(r[1]),
@@ -54,6 +64,11 @@ function doPost(e) {
             commentText: String(r[4]),
             sourceVideoTitle: String(r[5]),
             channelName: sh.getName(),
+            origin: isMina ? 'mina' : 'comentario',
+            format: String(r[8] || ''),
+            potential: String(r[9] || ''),
+            hook: String(r[10] || ''),
+            referenceUrl: String(r[11] || ''),
           });
         }
       });
@@ -63,6 +78,14 @@ function doPost(e) {
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
+  }
+}
+
+function ensureHeaders_(sh, headers) {
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const current = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (current.length < headers.length || current[headers.length - 1] !== headers[headers.length - 1]) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold').setBackground('#fde68a');
   }
 }
 
@@ -76,7 +99,10 @@ function sheetFor_(ss, channelName) {
     sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold').setBackground('#fde68a');
     sh.setColumnWidth(3, 380);
     sh.setColumnWidth(5, 420);
+    sh.setColumnWidth(11, 320);
     sh.hideColumns(1);
+  } else {
+    ensureHeaders_(sh, HEADERS);
   }
   return sh;
 }
@@ -96,21 +122,70 @@ function findRow_(ss, id) {
 }
 
 function upsert_(ss, t) {
-  const row = [
+  const isMina = t.origin === 'mina';
+  const first = [
     t.id,
     t.createdAt ? new Date(t.createdAt) : new Date(),
     t.topicTitle || '',
     t.nickname || '',
     t.commentText || '',
     t.sourceVideoTitle || '',
-    'Ideia',
+  ];
+  const extra = [
+    isMina ? '💎 Mina' : '💬 Comentário',
+    t.format || '',
+    t.potential ? String(t.potential).toUpperCase() : '',
+    t.hook || '',
+    t.referenceUrl || '',
   ];
   const found = findRow_(ss, t.id);
   if (found) {
-    // preserva a coluna Status que você editar manualmente na planilha
-    found.sheet.getRange(found.row, 1, 1, HEADERS.length - 1).setValues([row.slice(0, HEADERS.length - 1)]);
+    ensureHeaders_(found.sheet, HEADERS);
+    // Status (coluna G) é preservado
+    found.sheet.getRange(found.row, 1, 1, first.length).setValues([first]);
+    found.sheet.getRange(found.row, STATUS_COL + 1, 1, extra.length).setValues([extra]);
   } else {
-    sheetFor_(ss, t.channelName).appendRow(row);
+    const sh = sheetFor_(ss, t.channelName);
+    sh.appendRow(first.concat(['Ideia']).concat(extra));
+    if (isMina) sh.getRange(sh.getLastRow(), 1, 1, HEADERS.length).setBackground('#f3e8ff');
+  }
+}
+
+function logMining_(ss, m) {
+  let sh = ss.getSheetByName(MINING_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(MINING_SHEET);
+    sh.appendRow(MINING_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, MINING_HEADERS.length).setFontWeight('bold').setBackground('#e9d5ff');
+    sh.setColumnWidth(4, 320);
+    sh.setColumnWidth(5, 380);
+    sh.setColumnWidth(6, 460);
+    sh.hideColumns(1);
+  }
+  const row = [
+    m.id,
+    m.analyzedAt ? new Date(m.analyzedAt) : new Date(),
+    m.channelName || '',
+    m.analyzedLabel || '',
+    m.insight || '',
+    m.interestRanking || '',
+  ];
+  const last = sh.getLastRow();
+  if (last >= 2) {
+    const ids = sh.getRange(2, 1, last - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === String(m.id)) {
+        sh.getRange(i + 2, 1, 1, row.length).setValues([row]);
+        return;
+      }
+    }
+  }
+  sh.appendRow(row);
+  const r = sh.getLastRow();
+  sh.getRange(r, 1, 1, row.length).setWrap(true).setVerticalAlignment('top');
+  if (m.url) {
+    sh.getRange(r, 4).setFormula('=HYPERLINK("' + String(m.url).replace(/"/g, '') + '","' + String(m.analyzedLabel || 'Abrir').replace(/"/g, "'") + '")');
   }
 }
 

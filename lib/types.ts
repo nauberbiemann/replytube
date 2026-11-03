@@ -37,6 +37,12 @@ export interface SavedTopic {
   nickname: string;
   sourceVideoTitle?: string;
   createdAt: string;
+  /** 'comentario' (padrão) ou 'mina' (ideia vinda da Mina de Ouro) */
+  origin?: 'comentario' | 'mina';
+  format?: string;
+  potential?: string;
+  hook?: string;
+  referenceUrl?: string;
 }
 
 export interface VideoReferenceData {

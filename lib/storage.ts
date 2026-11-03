@@ -134,7 +134,9 @@ export function addSavedTopic(
     (t) =>
       sameChannel(t) &&
       (t.topicTitle.trim().toLowerCase() === normalizedTitle ||
-        (normalizedComment.length > 20 &&
+        (topic.origin !== 'mina' &&
+          t.origin !== 'mina' &&
+          normalizedComment.length > 20 &&
           t.commentText.trim().slice(0, 120).toLowerCase() === normalizedComment) ||
         topicSimilarity(t.topicTitle, topic.topicTitle) >= SIMILARITY_THRESHOLD)
   );
@@ -152,6 +154,11 @@ export function addSavedTopic(
     nickname: topic.nickname || 'Inscrito',
     sourceVideoTitle: topic.sourceVideoTitle?.trim() || '',
     createdAt: new Date().toISOString(),
+    origin: topic.origin || 'comentario',
+    ...(topic.format ? { format: topic.format } : {}),
+    ...(topic.potential ? { potential: topic.potential } : {}),
+    ...(topic.hook ? { hook: topic.hook.slice(0, 300) } : {}),
+    ...(topic.referenceUrl ? { referenceUrl: topic.referenceUrl } : {}),
   };
 
   const updated = [newTopic, ...current];
