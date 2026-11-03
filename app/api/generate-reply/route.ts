@@ -37,8 +37,10 @@ Retorne APENAS JSON:
 
 const REPLY_RULES = `Você é o criador do canal no YouTube respondendo comentários com voz humana, específica e tecnicamente correta.
 
-REGRA Nº 1 — UM VÍDEO POR COMENTÁRIO:
-Os comentários chegam agrupados por vídeo. Responda cada comentário SOMENTE com base no título do vídeo do SEU bloco e no que a pessoa escreveu. É PROIBIDO trazer assunto de outro bloco/vídeo (ex: falar de troca de óleo num comentário de um vídeo sobre desligar o carro, só porque outro comentário falou de óleo). Se o comentário for curto (ex: "Logan 2020 com 313 mil km"), conecte o dado da pessoa ao tema do vídeo DELA.
+REGRA Nº 1 — O TEMA É O VÍDEO INFORMADO:
+Você recebe UM comentário e o título do vídeo onde ele foi feito. A resposta deve se conectar ao assunto DESSE título (ex: vídeo "PARE de Acelerar Errado: O Hábito Que Faz Seu Carro Beber" -> fale de aceleração/consumo; vídeo "PARE de Desligar o Carro Assim" -> fale do jeito de desligar). Não traga assuntos de outros vídeos do canal. Se o comentário for curto (ex: "Meriva 1.8 2003"), conecte o carro da pessoa ao tema do vídeo.
+
+REGRA Nº 2 — NOME: se o nome for informado, use-o na primeira frase, de forma natural (sem "Fala"/"Olá").
 
 COMO RESPONDER CADA TIPO:
 - ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou e acrescente 1 informação útil ligada ao tema do vídeo. Nada de agradecimento vazio.
@@ -52,18 +54,17 @@ COMO RESPONDER CADA TIPO:
 PROIBIDO: "Fico muito feliz", "Fico feliz em saber", "Que notícia fantástica", "marca impressionante", "Muito obrigado pela inscrição", "Espero que tenha gostado", "ponto crucial", "ótima observação", "excelente ponto", "Fala [Nome]!", "Olá [Nome]!", "Continue assim!", "Continue acompanhando a gente!", "Vamos continuar debatendo".
 Use o primeiro nome de forma natural.
 
-FECHAMENTO — escolha 1 e VARIE entre os comentários:
+FECHAMENTO — use o estilo indicado na mensagem:
 A) Gancho para próximos vídeos LIGADO ao assunto + bordão oficial do canal (se existir nas diretrizes).
-B) Pergunta curta e específica sobre o tema do vídeo daquele comentário.
-C) Frase técnica de conclusão que crava a tese do vídeo daquele comentário.
+B) Pergunta curta e específica sobre o tema do vídeo.
+C) Frase técnica de conclusão que crava a tese do vídeo.
 
 TAMANHO: 2 a 3 frases.
 
 PAUTA ("suggestedTopic"): só se o comentário trouxer pergunta, pedido, caso real, comparação ou crítica que renda um vídeo NOVO; fiel ao que a pessoa disse. Senão "".
-Itens marcados "SOMENTE_PAUTA" (respostas de terceiros): NÃO escreva resposta ("reply": ""), apenas avalie a pauta.
+MODO SOMENTE_PAUTA (resposta de terceiro): "reply" deve ser "", apenas avalie a pauta.
 
-Retorne APENAS JSON, um item para cada "ref" recebido, na mesma ordem:
-{"results":[{"ref":1,"suggestedTopic":"","closingStyle":"A|B|C","reply":""}]}`;
+Retorne APENAS JSON: {"suggestedTopic":"","reply":""}`;
 
 function buildChannelProfile(context: ChannelContext): string {
   const desc = (context.channelDescription || '').slice(0, 6000);
@@ -232,51 +233,52 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ---------------- ETAPA 2: RESPOSTAS (texto puro, agrupado por vídeo) ----------------
-    const groups = new Map<string, { ref: number; item: (typeof work)[number] }[]>();
-    work.forEach((item, idx) => {
-      const key = item.videoTitle || '(título do vídeo não identificado)';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push({ ref: idx + 1, item });
-    });
+    // ---------------- ETAPA 2: UMA CHAMADA POR COMENTÁRIO (isolamento total) ----------------
+    // Cada chamada só enxerga UM comentário e o SEU vídeo: não há como "vazar" assunto de outra linha.
+    // O prefixo (regras + perfil do canal) é idêntico em todas -> elegível a prompt caching.
+    const systemReply = `${REPLY_RULES}\n\n${buildChannelProfile(context)}`;
+    const styles = ['A', 'B', 'C'];
+    const offset = Math.floor(Math.random() * 3);
+    const recent = (recentReplies || []).slice(0, 2).map((r) => `- "${r.slice(0, 140)}"`).join('\n');
 
-    let userText = '';
-    groups.forEach((entries, title) => {
-      userText += `\n=== VÍDEO: "${title}" ===\n`;
-      entries.forEach(({ ref, item }) => {
-        userText += `[ref ${ref}] ${item.mode} | ${item.nickname}${item.personName ? ` (${item.personName})` : ''}: "${item.commentText}"\n`;
-      });
-    });
-    if (recentReplies && recentReplies.length > 0) {
-      userText += `\nÚLTIMAS RESPOSTAS (não repita abertura nem fechamento):\n${recentReplies
-        .slice(0, 2)
-        .map((r) => `- "${r.slice(0, 140)}"`)
-        .join('\n')}`;
-    }
+    const answers = await Promise.all(
+      work.map(async (item, idx) => {
+        const firstName = (item.personName || '').trim();
+        const userText =
+          item.mode === 'SOMENTE_PAUTA'
+            ? `MODO: SOMENTE_PAUTA (resposta de terceiro; NÃO escreva reply)
+VÍDEO: "${item.videoTitle || 'não identificado'}"
+Comentário de ${item.nickname}: "${item.commentText}"`
+            : `VÍDEO DESTE COMENTÁRIO (o único tema permitido): "${item.videoTitle || 'não identificado'}"
+AUTOR: ${item.nickname}${firstName ? ` — chame-o de "${firstName}" na PRIMEIRA frase` : ' — sem nome identificável, não invente nome'}
+COMENTÁRIO: "${item.commentText}"
+FECHAMENTO A USAR: ${styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
 
-    const replyCompletion = await openai.chat.completions.create({
-      model,
-      temperature: 0.5,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.2,
-      max_tokens: 1800,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: `${REPLY_RULES}\n\n${buildChannelProfile(context)}` },
-        { role: 'user', content: userText.trim() },
-      ],
-    });
-    addUsage(replyCompletion.usage);
-
-    const rawReplies = JSON.parse(replyCompletion.choices[0]?.message?.content || '{}');
-    const results: any[] = Array.isArray(rawReplies.results) ? rawReplies.results : [];
-    const byRef = new Map<number, any>();
-    results.forEach((r, idx) => byRef.set(Number(r.ref) || idx + 1, r));
+        const completion = await openai.chat.completions.create({
+          model,
+          temperature: 0.5,
+          presence_penalty: 0.1,
+          frequency_penalty: 0.2,
+          max_tokens: 400,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: systemReply },
+            { role: 'user', content: userText },
+          ],
+        });
+        addUsage(completion.usage);
+        try {
+          return JSON.parse(completion.choices[0]?.message?.content || '{}');
+        } catch {
+          return {};
+        }
+      })
+    );
 
     const comments: any[] = [];
     const replyTopics: any[] = [];
     work.forEach((item, idx) => {
-      const r = byRef.get(idx + 1) || {};
+      const r = answers[idx] || {};
       if (item.mode === 'RESPONDER') {
         comments.push({
           nickname: item.nickname,
