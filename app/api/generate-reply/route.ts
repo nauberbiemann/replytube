@@ -44,7 +44,7 @@ REGRA Nº 2 — NOME: se o nome for informado, use-o na primeira frase, de forma
 
 COMO RESPONDER CADA TIPO:
 - ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou; acrescente informação útil SÓ se couber no tamanho. Nada de agradecimento vazio.
-- RESULTADO PESSOAL / DADO DO CARRO / QUILOMETRAGEM (ex: "Ônix 2020 516 mil km", "Meriva 1.8 2003"): NADA de lição de moral nem de dica. Parabenize ou valorize o que a pessoa contou e faça uma ponte leve e simpática com o tema do vídeo. Ex. (vídeo sobre desligar o carro): "Gusttavo, 516 mil km é prova de cuidado! Esse Ônix já deve ter sido desligado incontáveis vezes do jeito certo. Cuide do seu carro, cuide do seu bolso!"
+- COMENTÁRIO SIMPLES (carro, modelo, ano, quilometragem, elogio curto — ex: "Ônix 2020 516 mil km", "Meu carro é Bravado Buffalo 4x4"): tom de conversa leve entre amigos. Celebre, elogie ou demonstre simpatia pelo que a pessoa contou. PROIBIDO alertar, ensinar ou advertir: nada de "fique atento", "cuidado", "pode desgastar", "evite", "exige atenção", "é importante". Só cite o tema do vídeo se for de forma POSITIVA e natural (ex: "esse aí já deve ter sido desligado do jeito certo muitas vezes"); se não couber naturalmente, NÃO fale do tema — fique só na amenidade. Ex.: "Gusttavo, 516 mil km é coisa de quem cuida bem! Cuide do seu carro, cuide do seu bolso!"
 - PERGUNTA: responda de forma direta e CORRETA para o caso exato (automático ≠ manual etc.). Se exigir mais que 2 frases, dê a dica principal e diga que vira vídeo.
 - DADO TÉCNICO / COMPLEMENTO: converse de igual para igual.
 - IRONIA OU ANALOGIA CONCORDANDO com o vídeo: NÃO rebata.
@@ -160,6 +160,8 @@ export async function POST(req: NextRequest) {
           type: 'text',
           text: typedText
             ? `O texto do comentário foi digitado pelo criador (use-o como commentText): """${typedText}"""\nDo print, leia apenas autor e título do vídeo.`
+            : manualTitle
+            ? 'Transcreva o print. Todos os comentários são do mesmo vídeo (já informado): deixe "videoTitle" vazio.'
             : 'Transcreva o print.',
         },
         {
@@ -216,8 +218,9 @@ export async function POST(req: NextRequest) {
 
     // título: o do print prevalece; o campo manual só preenche quando o print não mostra
     extracted.forEach((i) => {
-      if (!i.videoTitle) i.videoTitle = manualTitle;
+      if (manualTitle) i.videoTitle = manualTitle; // campo preenchido = vale para TODOS os comentários
       if (!i.personName) i.personName = guessFirstName(i.nickname);
+      if (i.personName.replace(/[^A-Za-zÀ-ÿ]/g, '').length < 3) i.personName = ''; // evita 'Ma', 'Jo'...
     });
 
     // comentários principais já respondidos pelo canal
@@ -262,7 +265,7 @@ export async function POST(req: NextRequest) {
         const len = item.commentText.length;
         const isQuestion = item.commentText.includes('?');
         const size =
-          len <= 80 && !isQuestion
+          len <= 120 && !isQuestion
             ? { words: 25, tokens: 120, label: '1 ou 2 frases curtas, MÁXIMO 25 palavras' }
             : len <= 220
             ? { words: 40, tokens: 180, label: '2 frases, MÁXIMO 40 palavras' }
@@ -275,8 +278,8 @@ Comentário de ${item.nickname}: "${item.commentText}"`
             : `VÍDEO DESTE COMENTÁRIO (o único tema permitido): "${item.videoTitle || 'não identificado'}"
 AUTOR: ${item.nickname}${firstName ? ` — chame-o de "${firstName}" na PRIMEIRA frase` : ' — sem nome identificável, não invente nome'}
 COMENTÁRIO: "${item.commentText}"
-TAMANHO: ${size.label}.
-FECHAMENTO A USAR: ${len <= 80 && !isQuestion ? 'A (bordão do canal)' : styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
+TAMANHO: ${size.label}.${len <= 120 && !isQuestion ? '\nTIPO: COMENTÁRIO SIMPLES — só simpatia/amenidade, sem nenhum alerta ou ensinamento.' : ''}
+FECHAMENTO A USAR: ${len <= 120 && !isQuestion ? 'A (bordão do canal)' : styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
 
         const completion = await openai.chat.completions.create({
           model,

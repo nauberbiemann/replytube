@@ -131,7 +131,9 @@ export function VideoReference({
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        As respostas serão escritas considerando o assunto deste vídeo.
+        {title.trim()
+          ? '🔒 Título preenchido: vale para TODOS os comentários colados (ideal ao responder um vídeo por vez). Troque ao mudar de vídeo.'
+          : 'Vazio: o app lê o título do vídeo ao lado de cada comentário no print.'}
       </p>
     </div>
   );
