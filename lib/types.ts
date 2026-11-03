@@ -25,7 +25,19 @@ export interface CommentItem {
   suggestedTopic?: string;
   savedTopicId?: string;
   videoTitle?: string;
+  videoDescription?: string;
   createdAt?: string;
+}
+
+/** Vídeo "travado" para uma sequência de respostas */
+export interface LockedVideo {
+  id: string; // videoId do YouTube ou título normalizado
+  title: string;
+  description?: string; // descrição limpa (resumo/capítulos) usada como contexto
+  url?: string;
+  thumbnailUrl?: string;
+  channelId?: string;
+  usedAt: string;
 }
 
 export interface SavedTopic {

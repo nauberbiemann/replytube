@@ -114,6 +114,7 @@ export async function POST(req: NextRequest) {
       commentTextFallback,
       videoTitle,
       videoImageDataUrl,
+      videoDescription,
       recentReplies,
       model: requestedModel,
     } = body as {
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
       commentTextFallback?: string;
       videoTitle?: string;
       videoImageDataUrl?: string;
+      videoDescription?: string;
       recentReplies?: string[];
       model?: string;
     };
@@ -275,7 +277,11 @@ export async function POST(req: NextRequest) {
             ? `MODO: SOMENTE_PAUTA (resposta de terceiro; NÃO escreva reply)
 VÍDEO: "${item.videoTitle || 'não identificado'}"
 Comentário de ${item.nickname}: "${item.commentText}"`
-            : `VÍDEO DESTE COMENTÁRIO (o único tema permitido): "${item.videoTitle || 'não identificado'}"
+            : `VÍDEO DESTE COMENTÁRIO (o único tema permitido): "${item.videoTitle || 'não identificado'}"${
+                manualTitle && item.videoTitle === manualTitle && videoDescription?.trim()
+                  ? `\nSOBRE O VÍDEO (descrição oficial — use só para entender o conteúdo e minutagens citadas; não copie):\n"""${videoDescription.trim().slice(0, 1200)}"""`
+                  : ''
+              }
 AUTOR: ${item.nickname}${firstName ? ` — chame-o de "${firstName}" na PRIMEIRA frase` : ' — sem nome identificável, não invente nome'}
 COMENTÁRIO: "${item.commentText}"
 TAMANHO: ${size.label}.${len <= 120 && !isQuestion ? '\nTIPO: COMENTÁRIO SIMPLES — só simpatia/amenidade, sem nenhum alerta ou ensinamento.' : ''}

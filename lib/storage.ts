@@ -1,7 +1,38 @@
-import { Channel, SavedTopic } from './types';
+import { Channel, SavedTopic, LockedVideo } from './types';
 
 const STORAGE_KEY = 'replytube.channels';
 const TOPICS_STORAGE_KEY = 'replytube.saved_topics';
+const RECENT_VIDEOS_KEY = 'replytube.recent_videos';
+
+export function getRecentVideos(channelId?: string): LockedVideo[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const all: LockedVideo[] = JSON.parse(window.localStorage.getItem(RECENT_VIDEOS_KEY) || '[]');
+    return (Array.isArray(all) ? all : [])
+      .filter((v) => !channelId || !v.channelId || v.channelId === channelId)
+      .sort((a, b) => new Date(b.usedAt).getTime() - new Date(a.usedAt).getTime());
+  } catch {
+    return [];
+  }
+}
+
+/** Salva/atualiza um vídeo na lista de recentes (máx. 15 por canal). */
+export function saveRecentVideo(video: LockedVideo): LockedVideo[] {
+  if (typeof window === 'undefined') return [];
+  const all = getRecentVideos();
+  const others = all.filter((v) => !(v.id === video.id && v.channelId === video.channelId));
+  const sameChannel = [video, ...others.filter((v) => v.channelId === video.channelId)].slice(0, 15);
+  const rest = others.filter((v) => v.channelId !== video.channelId);
+  window.localStorage.setItem(RECENT_VIDEOS_KEY, JSON.stringify([...sameChannel, ...rest]));
+  return getRecentVideos(video.channelId);
+}
+
+export function removeRecentVideo(id: string, channelId?: string): LockedVideo[] {
+  if (typeof window === 'undefined') return [];
+  const all = getRecentVideos().filter((v) => !(v.id === id && v.channelId === channelId));
+  window.localStorage.setItem(RECENT_VIDEOS_KEY, JSON.stringify(all));
+  return getRecentVideos(channelId);
+}
 
 export function getStoredChannels(): Channel[] {
   if (typeof window === 'undefined') return [];

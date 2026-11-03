@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
 import { ChannelContext } from '@/lib/types';
 import { validateAccess } from '@/lib/auth';
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       previousReply,
       instruction,
       videoTitle,
+      videoDescription,
       context,
       model: requestedModel,
     } = body as {
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
       previousReply: string;
       instruction: string;
       videoTitle?: string;
+      videoDescription?: string;
       context?: ChannelContext;
       model?: string;
     };
@@ -71,7 +73,7 @@ ${compactDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL:\n"""\n${compact
     : ''
 }`;
 
-    const userPrompt = `${videoTitle ? `TEMA DO VÍDEO: "${videoTitle}"\n` : ''}Comentário de ${personName || nickname}: "${commentText}"
+    const userPrompt = `${videoTitle ? `TEMA DO VÍDEO: "${videoTitle}"\n` : ''}${videoDescription?.trim() ? `SOBRE O VÍDEO (descrição oficial, só para contexto): """${videoDescription.trim().slice(0, 1200)}"""\n` : ''}Comentário de ${personName || nickname}: "${commentText}"
 Resposta anterior: "${previousReply}"
 DIRECIONAMENTO OBRIGATÓRIO: """${instruction.trim()}"""`;
 

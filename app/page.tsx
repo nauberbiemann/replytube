@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Channel, ChannelContext, CommentItem, SavedTopic, ContentIdea, InsightsAnalysisResult } from '@/lib/types';
+import { Channel, ChannelContext, CommentItem, SavedTopic, ContentIdea, InsightsAnalysisResult, LockedVideo } from '@/lib/types';
 import {
   getStoredChannels,
   createChannel,
@@ -13,6 +13,9 @@ import {
   updateSavedTopicTitle,
   removeSavedTopic,
   mergeTopics,
+  getRecentVideos,
+  saveRecentVideo,
+  removeRecentVideo,
 } from '@/lib/storage';
 import { optimizeImageFile } from '@/lib/image-optimizer';
 import { Header } from '@/components/Header';
@@ -73,6 +76,9 @@ export default function DashboardPage() {
   // Vídeo de Referência
   const [videoTitle, setVideoTitle] = useState<string>('');
   const [videoImage, setVideoImage] = useState<string>('');
+  const [lockedVideo, setLockedVideo] = useState<LockedVideo | null>(null);
+  const [recentVideos, setRecentVideos] = useState<LockedVideo[]>([]);
+  const videoDescriptionRef = useRef<string>('');
 
   // Novo Comentário
   const [commentImage, setCommentImage] = useState<string>('');
@@ -185,6 +191,32 @@ export default function DashboardPage() {
     videoTitleRef.current = videoTitle;
     videoImageRef.current = videoImage;
   }, [videoTitle, videoImage]);
+
+  // Vídeo travado -> título usado em todos os comentários + descrição como contexto
+  useEffect(() => {
+    setVideoTitle(lockedVideo?.title || '');
+    videoDescriptionRef.current = lockedVideo?.description || '';
+  }, [lockedVideo]);
+
+  useEffect(() => {
+    setRecentVideos(getRecentVideos(selectedChannelId || undefined));
+  }, [selectedChannelId]);
+
+  const handleLockVideo = (v: Omit<LockedVideo, 'usedAt' | 'channelId'>) => {
+    const full: LockedVideo = {
+      ...v,
+      channelId: selectedChannelIdRef.current || undefined,
+      usedAt: new Date().toISOString(),
+    };
+    setLockedVideo(full);
+    setRecentVideos(saveRecentVideo(full));
+    addToast(`🔒 Respondendo: ${full.title}`, 'success');
+  };
+
+  const handleUnlockVideo = () => {
+    setLockedVideo(null);
+    addToast('Vídeo destravado: o app volta a ler o título de cada comentário no print.', 'info');
+  };
 
   useEffect(() => {
     appPasswordRef.current = appPassword;
@@ -397,6 +429,7 @@ export default function DashboardPage() {
             commentImageDataUrl: imageToSend,
             commentTextFallback: textToSend,
             videoTitle: videoTitleRef.current,
+            videoDescription: videoDescriptionRef.current,
             videoImageDataUrl: videoImageRef.current,
             recentReplies: threadItems.slice(0, 2).map((t) => t.reply),
             model: selectedModelRef.current,
@@ -478,6 +511,10 @@ export default function DashboardPage() {
             suggestedTopic: rawTopic || undefined,
             savedTopicId,
             videoTitle: itemVideoTitle,
+            videoDescription:
+              itemVideoTitle && itemVideoTitle === videoTitleRef.current
+                ? videoDescriptionRef.current || undefined
+                : undefined,
             imageDataUrl: imageToSend,
             createdAt: new Date().toISOString(),
           });
@@ -562,6 +599,7 @@ export default function DashboardPage() {
           previousReply: item.reply,
           instruction,
           videoTitle: item.videoTitle || videoTitleRef.current,
+          videoDescription: item.videoDescription || '',
           context: selectedChannelRef.current,
           model: selectedModelRef.current,
         }),
@@ -764,6 +802,7 @@ export default function DashboardPage() {
     setFallbackText('');
     setVideoTitle('');
     setVideoImage('');
+    setLockedVideo(null);
     setThreadItems([]);
     addToast('Novo ciclo iniciado!', 'info');
   };
@@ -896,10 +935,15 @@ export default function DashboardPage() {
               />
 
               <VideoReference
-                title={videoTitle}
-                onTitleChange={setVideoTitle}
-                image={videoImage}
-                onImageChange={setVideoImage}
+                lockedVideo={lockedVideo}
+                recentVideos={recentVideos}
+                onLock={handleLockVideo}
+                onUnlock={handleUnlockVideo}
+                onRemoveRecent={(id) =>
+                  setRecentVideos(removeRecentVideo(id, selectedChannelId || undefined))
+                }
+                appPassword={appPassword}
+                addToast={addToast}
                 disabled={generating}
               />
 
@@ -932,6 +976,24 @@ export default function DashboardPage() {
                 onUpdateTopic={handleUpdateSavedTopic}
                 onRemoveTopic={(id) => handleRemoveSavedTopic(id)}
               />
+
+              {lockedVideo && (
+                <div className="sticky top-16 z-20 flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-950/80 backdrop-blur px-4 py-2.5 shadow-sm">
+                  <div className="flex items-center gap-2 min-w-0 text-xs">
+                    <span className="shrink-0 font-semibold text-emerald-300">🔒 Respondendo:</span>
+                    <span className="truncate text-emerald-100" title={lockedVideo.title}>
+                      {lockedVideo.title}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUnlockVideo}
+                    className="shrink-0 rounded-md border border-emerald-500/40 px-2 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20"
+                  >
+                    Destravar
+                  </button>
+                </div>
+              )}
 
               <SessionThread
                 items={threadItems}
