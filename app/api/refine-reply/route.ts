@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
 import { ChannelContext } from '@/lib/types';
 import { validateAccess } from '@/lib/auth';
@@ -48,35 +48,32 @@ export async function POST(req: NextRequest) {
       ? context.channelDescription.slice(0, 6000)
       : '';
 
+    // Ordem para prompt caching: regras fixas -> perfil do canal -> dados variáveis no fim
     const systemPrompt = `Você é o criador do canal no YouTube ajustando sua resposta a um inscrito.
-${
-  context
-    ? `PERFIL DO CANAL:
-- Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico, analítico e direto'}
-- Público: ${context.publico || 'Entusiastas e profissionais'}
-${context.resumo ? `- Resumo: ${context.resumo}` : ''}
-${compactDescription ? `- Diretrizes e Bordões Oficiais:\n"""\n${compactDescription}\n"""` : ''}`
-    : ''
-}
-${videoTitle ? `TEMA DO VÍDEO: "${videoTitle}"` : ''}
 
 REGRAS INVIOLÁVEIS:
-1. FIDELIDADE TOTAL À INSTRUÇÃO: A instrução do criador é LEI ESTRITA. Incorpore 100% do direcionamento pedido sem inventar assuntos aleatórios.
-2. CONCISÃO: Máximo de 2 a 3 frases objetivas, sem divagações.
-3. FINALIZAÇÃO DIRECIONADA (PROIBIDO clichês genéricos de IA como "Vamos ver na próxima década!", "Vamos continuar debatendo! 🚀", "O mercado é dinâmico!"):
-   Feche sempre com 1 destes 3 estilos (salvo instrução específica em contrário):
-   - A) Direcionado ao Canal / Próximos Vídeos + Bordão Oficial do Canal;
-   - B) Pergunta Técnica Engajadora sobre o tema do vídeo;
-   - C) Conclusão Técnica Afiada cravando a tese do vídeo.
-4. SEM SAUDAÇÃO PRONTA: Proibido começar com "Fala [Nome]!" ou "Olá [Nome]!". Use o nome (${personName || nickname}) naturalmente na frase.
-5. TRADUÇÃO / IDIOMA: Se a instrução pedir para traduzir para o idioma do comentário original, identifique o idioma exato de "${commentText.slice(0, 100)}" e traduza a resposta INTEGRALMENTE com fluência nativa, adaptando os bordões finais para esse idioma (ex: EN: "Clear radar over here!" / "Until the next flight!"; ES: "¡Radar limpio por aquí!" / "¡Hasta el próximo vuelo!").
+1. FIDELIDADE TOTAL À INSTRUÇÃO: a instrução do criador é LEI. Incorpore 100% do que foi pedido, sem inventar assuntos, fatos ou números.
+2. CONCISÃO: 2 a 3 frases (salvo pedido contrário).
+3. Responda de forma CORRETA para o caso exato do comentário (não dê dica que não se aplica).
+4. PROIBIDO aberturas/fechamentos genéricos: "Fico muito feliz", "Fico feliz em saber", "Que notícia fantástica", "ponto crucial", "ótima observação", "Fala [Nome]!", "Olá [Nome]!", "Continue assim!", "Continue acompanhando a gente!", "Vamos continuar debatendo".
+5. FECHAMENTO (salvo instrução contrária): A) gancho para próximos vídeos ligado ao assunto + bordão oficial do canal (somente se existir nas diretrizes ABAIXO); B) pergunta curta e específica sobre o tema; ou C) conclusão técnica.
+6. TRADUÇÃO: se pedirem o idioma do comentário, detecte o idioma do comentário original e traduza INTEGRALMENTE com fluência nativa, adaptando o bordão do PRÓPRIO canal para esse idioma. Nenhuma frase pode ficar em português.
 
-Retorne APENAS JSON: { "reply": "..." }`;
+Retorne APENAS JSON: { "reply": "..." }
+${
+  context
+    ? `
+PERFIL DO CANAL:
+- Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico e direto'}
+- Público: ${context.publico || 'Entusiastas'}
+${context.resumo ? `- Resumo: ${context.resumo}` : ''}
+${compactDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL:\n"""\n${compactDescription}\n"""` : ''}`
+    : ''
+}`;
 
-    const userPrompt = `Comentário (${personName || nickname}): "${commentText}"
+    const userPrompt = `${videoTitle ? `TEMA DO VÍDEO: "${videoTitle}"\n` : ''}Comentário de ${personName || nickname}: "${commentText}"
 Resposta anterior: "${previousReply}"
-DIRECIONAMENTO OBRIGATÓRIO: """${instruction.trim()}"""
-Retorne JSON: { "reply": "..." }`;
+DIRECIONAMENTO OBRIGATÓRIO: """${instruction.trim()}"""`;
 
     const completion = await openai.chat.completions.create({
       model,
@@ -102,8 +99,15 @@ Retorne JSON: { "reply": "..." }`;
     }
 
     const parsed = JSON.parse(responseContent);
+    const usage = completion.usage as any;
     return NextResponse.json({
       reply: parsed.reply || '',
+      usage: {
+        model,
+        inputTokens: usage?.prompt_tokens ?? 0,
+        cachedTokens: usage?.prompt_tokens_details?.cached_tokens ?? 0,
+        outputTokens: usage?.completion_tokens ?? 0,
+      },
     });
   } catch (error: any) {
     console.error('Erro em /api/refine-reply:', error);

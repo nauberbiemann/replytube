@@ -136,3 +136,15 @@ export function removeSavedTopic(id: string): SavedTopic[] {
   saveStoredTopics(updated);
   return updated;
 }
+
+/** Mescla temas vindos da planilha (por ID), sem duplicar. */
+export function mergeTopics(incoming: SavedTopic[]): { list: SavedTopic[]; added: number } {
+  const current = getStoredTopics();
+  const ids = new Set(current.map((t) => t.id));
+  const fresh = incoming.filter((t) => t.id && !ids.has(t.id));
+  const updated = [...current, ...fresh].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  saveStoredTopics(updated);
+  return { list: updated, added: fresh.length };
+}

@@ -12,6 +12,7 @@ import {
   addSavedTopic,
   updateSavedTopicTitle,
   removeSavedTopic,
+  mergeTopics,
 } from '@/lib/storage';
 import { optimizeImageFile } from '@/lib/image-optimizer';
 import { Header } from '@/components/Header';
@@ -29,6 +30,24 @@ interface Toast {
   id: string;
   type: 'success' | 'error' | 'info';
   message: string;
+}
+
+// Preços oficiais OpenAI (USD por 1M tokens) — input / input em cache / output
+const PRICES: Record<string, { in: number; cached: number; out: number }> = {
+  'gpt-4o-mini': { in: 0.15, cached: 0.075, out: 0.6 },
+  'gpt-4o': { in: 2.5, cached: 1.25, out: 10 },
+};
+
+function formatUsage(usage: any, itemsCount = 1): string {
+  if (!usage || !usage.inputTokens) return '';
+  const p = PRICES[usage.model] || PRICES['gpt-4o-mini'];
+  const fresh = usage.inputTokens - (usage.cachedTokens || 0);
+  const cost =
+    (fresh * p.in + (usage.cachedTokens || 0) * p.cached + usage.outputTokens * p.out) / 1_000_000;
+  const perItem = itemsCount > 1 ? ` (~${Math.round(usage.inputTokens / itemsCount).toLocaleString('pt-BR')}/coment.)` : '';
+  return `[${usage.inputTokens.toLocaleString('pt-BR')} tokens entrada${
+    usage.cachedTokens ? `, ${usage.cachedTokens.toLocaleString('pt-BR')} em cache` : ''
+  }${perItem} · US$ ${cost.toFixed(4)}]`;
 }
 
 export default function DashboardPage() {
@@ -66,6 +85,42 @@ export default function DashboardPage() {
 
   // Banco de Temas Salvos (Permanente no localStorage)
   const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
+  const [sheetsConfigured, setSheetsConfigured] = useState<boolean>(false);
+
+  // Sincronização com Google Sheets (não consome tokens da OpenAI; falhas não travam o app)
+  const syncToSheets = async (payload: Record<string, any>): Promise<any> => {
+    try {
+      const res = await fetch('/api/topics/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-app-password': appPasswordRef.current,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.configured === false) return null;
+      if (!data.ok) throw new Error(data.error || 'Falha na planilha');
+      return data;
+    } catch (err: any) {
+      console.error('Sheets sync:', err);
+      addToast(`Planilha: ${err?.message || 'falha ao sincronizar'} (tema mantido no navegador).`, 'error');
+      return null;
+    }
+  };
+
+  const checkSheetsConfig = async () => {
+    try {
+      const res = await fetch('/api/topics/sync', {
+        headers: { 'x-app-password': appPasswordRef.current },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setSheetsConfigured(Boolean(data.configured));
+    } catch {
+      setSheetsConfigured(false);
+    }
+  };
 
   // Notificações Toast
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -132,7 +187,7 @@ export default function DashboardPage() {
     setToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, message.includes('tokens') ? 8000 : 4000);
   };
 
   const removeToast = (id: string) => {
@@ -205,6 +260,11 @@ export default function DashboardPage() {
     setSavedTopics(getStoredTopics());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isLocked) checkSheetsConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLocked, appPassword]);
 
   // Analisar contexto do canal selecionado
   const analyzeChannel = async (description: string, passOverride?: string, channelIdToCache?: string) => {
@@ -375,6 +435,7 @@ export default function DashboardPage() {
               ];
 
         const newItems: CommentItem[] = [];
+        const createdTopics: SavedTopic[] = [];
         let latestSavedTopics = getStoredTopics();
 
         for (const entry of extractedList) {
@@ -393,6 +454,7 @@ export default function DashboardPage() {
             });
             savedTopicId = result.saved.id;
             latestSavedTopics = result.list;
+            if (!result.alreadyExisted) createdTopics.push(result.saved);
           }
 
           newItems.push({
@@ -403,26 +465,32 @@ export default function DashboardPage() {
             reply: entry.reply || '',
             suggestedTopic: rawTopic || undefined,
             savedTopicId,
+            videoTitle: itemVideoTitle,
             imageDataUrl: imageToSend,
             createdAt: new Date().toISOString(),
           });
         }
 
         setSavedTopics(latestSavedTopics);
+        if (createdTopics.length > 0) {
+          syncToSheets({ action: 'upsert', topics: createdTopics });
+        }
         setThreadItems((prev) => [...newItems, ...prev]);
         setCommentImage('');
         setFallbackText('');
 
+        const usageNote = formatUsage(data.usage, newItems.length);
+
         if (newItems.length > 1) {
           addToast(
-            `${newItems.length} comentários divididos e respondidos individualmente!`,
+            `${newItems.length} comentários respondidos individualmente. ${usageNote}`,
             'success'
           );
         } else {
           const displayName =
             newItems[0]?.personName ||
             (newItems[0]?.nickname || '').replace(/^@/, '');
-          addToast(`Resposta gerada para ${displayName}!`, 'success');
+          addToast(`Resposta gerada para ${displayName}! ${usageNote}`, 'success');
         }
       } catch (err: any) {
         if (controller.signal.aborted) {
@@ -466,7 +534,7 @@ export default function DashboardPage() {
           personName: item.personName,
           previousReply: item.reply,
           instruction,
-          videoTitle: videoTitleRef.current,
+          videoTitle: item.videoTitle || videoTitleRef.current,
           context: selectedChannelRef.current,
           model: selectedModelRef.current,
         }),
@@ -485,13 +553,33 @@ export default function DashboardPage() {
       setThreadItems((prev) =>
         prev.map((it) => (it.id === id ? { ...it, reply: data.reply } : it))
       );
-      addToast('Resposta refinada com sucesso!', 'success');
+      addToast(`Resposta refinada! ${formatUsage(data.usage)}`, 'success');
     } catch (err: any) {
       addToast(err?.message || 'Erro ao refinar resposta.', 'error');
     }
   };
 
   // Gerenciamento do Banco de Temas Salvos
+  const handleSyncAllToSheets = async () => {
+    const all = getStoredTopics();
+    if (all.length === 0) return;
+    const data = await syncToSheets({ action: 'upsert', topics: all });
+    if (data) addToast(`${all.length} temas enviados para a planilha (abas por canal).`, 'success');
+  };
+
+  const handleImportFromSheets = async () => {
+    const data = await syncToSheets({ action: 'list' });
+    if (!data?.topics) return;
+    const storedChs = getStoredChannels();
+    const incoming: SavedTopic[] = data.topics.map((t: any) => ({
+      ...t,
+      channelId: storedChs.find((c) => c.name === t.channelName)?.id,
+    }));
+    const result = mergeTopics(incoming);
+    setSavedTopics(result.list);
+    addToast(`${result.added} temas importados da planilha.`, 'success');
+  };
+
   const handleAddManualTopic = (title: string) => {
     const activeCh = channels.find((c) => c.id === selectedChannelId);
     const channelName = activeCh?.name || channelContext?.nicho || 'Geral';
@@ -504,12 +592,15 @@ export default function DashboardPage() {
       sourceVideoTitle: videoTitle,
     });
     setSavedTopics(result.list);
+    if (!result.alreadyExisted) syncToSheets({ action: 'upsert', topics: [result.saved] });
     addToast('Tema adicionado ao Banco de Temas!', 'success');
   };
 
   const handleUpdateSavedTopic = (id: string, newTitle: string) => {
     const updated = updateSavedTopicTitle(id, newTitle);
     setSavedTopics(updated);
+    const changed = updated.find((t) => t.id === id);
+    if (changed) syncToSheets({ action: 'upsert', topics: [changed] });
     setThreadItems((prev) =>
       prev.map((it) =>
         it.savedTopicId === id ? { ...it, suggestedTopic: newTitle } : it
@@ -521,6 +612,7 @@ export default function DashboardPage() {
   const handleRemoveSavedTopic = (id: string, commentId?: string) => {
     const updated = removeSavedTopic(id);
     setSavedTopics(updated);
+    syncToSheets({ action: 'delete', id });
     setThreadItems((prev) =>
       prev.map((it) =>
         it.savedTopicId === id || (commentId && it.id === commentId)
@@ -542,9 +634,10 @@ export default function DashboardPage() {
       topicTitle,
       commentText: item.commentText,
       nickname: item.nickname,
-      sourceVideoTitle: videoTitle,
+      sourceVideoTitle: item.videoTitle || videoTitle,
     });
     setSavedTopics(result.list);
+    if (!result.alreadyExisted) syncToSheets({ action: 'upsert', topics: [result.saved] });
     setThreadItems((prev) =>
       prev.map((it) =>
         it.id === commentId
@@ -726,6 +819,9 @@ export default function DashboardPage() {
                   channels.find((c) => c.id === selectedChannelId)?.name
                 }
                 activeChannelId={selectedChannelId}
+                sheetsConfigured={sheetsConfigured}
+                onSyncAll={handleSyncAllToSheets}
+                onImportFromSheets={handleImportFromSheets}
                 onAddManualTopic={handleAddManualTopic}
                 onUpdateTopic={handleUpdateSavedTopic}
                 onRemoveTopic={(id) => handleRemoveSavedTopic(id)}

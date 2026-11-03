@@ -24,6 +24,7 @@ export interface CommentItem {
   reply: string;
   suggestedTopic?: string;
   savedTopicId?: string;
+  videoTitle?: string;
   createdAt?: string;
 }
 

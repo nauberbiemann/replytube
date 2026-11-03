@@ -319,7 +319,7 @@ export function CommentCard({
                   onKeyDown={handleKeyDown}
                   disabled={refining}
                   rows={2}
-                  placeholder="Digite sua diretriz exata (ex: 'Destaque o custo 30% menor do KC-390', 'Feche convidando para os próximos vídeos')... [Ctrl+Enter]"
+                  placeholder="Digite sua diretriz exata (ex: 'Explique por que funciona', 'Feche convidando para os próximos vídeos')... [Ctrl+Enter]"
                   className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-red-500 disabled:opacity-50"
                 />
 

@@ -22,6 +22,9 @@ interface SavedTopicsPanelProps {
   topics: SavedTopic[];
   activeChannelName?: string;
   activeChannelId?: string;
+  sheetsConfigured?: boolean;
+  onSyncAll?: () => Promise<void>;
+  onImportFromSheets?: () => Promise<void>;
   onAddManualTopic: (title: string) => void;
   onUpdateTopic: (id: string, newTitle: string) => void;
   onRemoveTopic: (id: string) => void;
@@ -31,11 +34,15 @@ export function SavedTopicsPanel({
   topics: allTopics,
   activeChannelName,
   activeChannelId,
+  sheetsConfigured,
+  onSyncAll,
+  onImportFromSheets,
   onAddManualTopic,
   onUpdateTopic,
   onRemoveTopic,
 }: SavedTopicsPanelProps) {
   const [showAllChannels, setShowAllChannels] = useState<boolean>(false);
+  const [syncing, setSyncing] = useState<boolean>(false);
 
   // Temas do canal selecionado (match por ID; fallback por nome para temas sem ID)
   const topics = useMemo(() => {
@@ -151,7 +158,7 @@ export function SavedTopicsPanel({
                 {!showAllChannels && activeChannelName ? ` · ${activeChannelName}` : ' · todos os canais'}
               </span>
               <span className="hidden sm:inline-flex items-center rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
-                ⚡ Salvo Automático & Permanente
+                {sheetsConfigured ? '☁️ Sincronizado c/ Google Sheets' : '💾 Só neste navegador'}
               </span>
             </div>
             <p className="text-[11px] text-muted-foreground">
@@ -243,6 +250,39 @@ export function SavedTopicsPanel({
               </button>
             </div>
           </div>
+
+          {/* Google Sheets */}
+          {sheetsConfigured ? (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="text-muted-foreground">Planilha Google (abas por canal):</span>
+              <button
+                type="button"
+                disabled={syncing}
+                onClick={async () => {
+                  setSyncing(true);
+                  try { await onSyncAll?.(); } finally { setSyncing(false); }
+                }}
+                className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                ☁️ Enviar todos
+              </button>
+              <button
+                type="button"
+                disabled={syncing}
+                onClick={async () => {
+                  setSyncing(true);
+                  try { await onImportFromSheets?.(); } finally { setSyncing(false); }
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                📥 Importar da planilha
+              </button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              💾 Temas salvos só neste navegador. Para backup em Google Sheets, configure <code>GOOGLE_SHEETS_WEBHOOK_URL</code> e <code>GOOGLE_SHEETS_SECRET</code> na Vercel (instruções em <code>google-apps-script/</code>).
+            </p>
+          )}
 
           {/* Adicionar Tema Manual */}
           <form onSubmit={handleSaveManual} className="flex gap-2">
