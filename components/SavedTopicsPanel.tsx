@@ -23,6 +23,7 @@ interface SavedTopicsPanelProps {
   activeChannelName?: string;
   activeChannelId?: string;
   sheetsConfigured?: boolean;
+  lastSheetsSync?: string;
   onSyncAll?: () => Promise<void>;
   onImportFromSheets?: () => Promise<void>;
   onAddManualTopic: (title: string) => void;
@@ -35,6 +36,7 @@ export function SavedTopicsPanel({
   activeChannelName,
   activeChannelId,
   sheetsConfigured,
+  lastSheetsSync,
   onSyncAll,
   onImportFromSheets,
   onAddManualTopic,
@@ -277,6 +279,11 @@ export function SavedTopicsPanel({
               >
                 📥 Importar da planilha
               </button>
+              <span className="text-muted-foreground">
+                {lastSheetsSync
+                  ? `✅ Última sincronização: ${new Date(lastSheetsSync).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                  : 'Ainda não sincronizado'}
+              </span>
             </div>
           ) : (
             <p className="text-[11px] text-muted-foreground">

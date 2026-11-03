@@ -86,6 +86,38 @@ export function saveStoredTopics(topics: SavedTopic[]): void {
   }
 }
 
+const STOPWORDS = new Set(
+  'a o as os de da do das dos e em no na nos nas um uma para por com sem que se ao aos sua seu suas seus como mais ou the and of to in for on is'.split(' ')
+);
+
+function topicWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => (w.length > 2 || /\d/.test(w)) && !STOPWORDS.has(w))
+      .map((w) => (w.length > 4 ? w.replace(/(s|es)$/, '') : w))
+  );
+}
+
+/** Similaridade local (0 a 1) entre dois temas — zero tokens. */
+export function topicSimilarity(a: string, b: string): number {
+  const A = topicWords(a);
+  const B = topicWords(b);
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  A.forEach((w) => {
+    if (B.has(w)) inter++;
+  });
+  // proporção sobre o menor conjunto: pega temas curtos contidos em temas longos
+  return inter / Math.min(A.size, B.size);
+}
+
+const SIMILARITY_THRESHOLD = 0.7;
+
 export function addSavedTopic(
   topic: Omit<SavedTopic, 'id' | 'createdAt'>
 ): { saved: SavedTopic; list: SavedTopic[]; alreadyExisted: boolean } {
@@ -93,12 +125,18 @@ export function addSavedTopic(
   const normalizedTitle = topic.topicTitle.trim().toLowerCase();
   const normalizedComment = topic.commentText.trim().slice(0, 120).toLowerCase();
 
+  const sameChannel = (t: SavedTopic) =>
+    topic.channelId && t.channelId
+      ? t.channelId === topic.channelId
+      : t.channelName === topic.channelName;
+
   const existing = current.find(
     (t) =>
-      t.channelName === topic.channelName &&
+      sameChannel(t) &&
       (t.topicTitle.trim().toLowerCase() === normalizedTitle ||
         (normalizedComment.length > 20 &&
-          t.commentText.trim().slice(0, 120).toLowerCase() === normalizedComment))
+          t.commentText.trim().slice(0, 120).toLowerCase() === normalizedComment) ||
+        topicSimilarity(t.topicTitle, topic.topicTitle) >= SIMILARITY_THRESHOLD)
   );
 
   if (existing) {

@@ -86,6 +86,11 @@ export default function DashboardPage() {
   // Banco de Temas Salvos (Permanente no localStorage)
   const [savedTopics, setSavedTopics] = useState<SavedTopic[]>([]);
   const [sheetsConfigured, setSheetsConfigured] = useState<boolean>(false);
+  const [lastSheetsSync, setLastSheetsSync] = useState<string>('');
+
+  useEffect(() => {
+    setLastSheetsSync(localStorage.getItem('replytube_last_sheets_sync') || '');
+  }, []);
 
   // Sincronização com Google Sheets (não consome tokens da OpenAI; falhas não travam o app)
   const syncToSheets = async (payload: Record<string, any>): Promise<any> => {
@@ -101,6 +106,9 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.configured === false) return null;
       if (!data.ok) throw new Error(data.error || 'Falha na planilha');
+      const now = new Date().toISOString();
+      localStorage.setItem('replytube_last_sheets_sync', now);
+      setLastSheetsSync(now);
       return data;
     } catch (err: any) {
       console.error('Sheets sync:', err);
@@ -436,6 +444,7 @@ export default function DashboardPage() {
 
         const newItems: CommentItem[] = [];
         const createdTopics: SavedTopic[] = [];
+        let duplicateTopics = 0;
         let latestSavedTopics = getStoredTopics();
 
         for (const entry of extractedList) {
@@ -455,6 +464,7 @@ export default function DashboardPage() {
             savedTopicId = result.saved.id;
             latestSavedTopics = result.list;
             if (!result.alreadyExisted) createdTopics.push(result.saved);
+            else duplicateTopics++;
           }
 
           newItems.push({
@@ -474,6 +484,12 @@ export default function DashboardPage() {
         setSavedTopics(latestSavedTopics);
         if (createdTopics.length > 0) {
           syncToSheets({ action: 'upsert', topics: createdTopics });
+        }
+        if (duplicateTopics > 0) {
+          addToast(
+            `${duplicateTopics} tema(s) parecido(s) com outro já salvo — não duplicado.`,
+            'info'
+          );
         }
         setThreadItems((prev) => [...newItems, ...prev]);
         setCommentImage('');
@@ -820,6 +836,7 @@ export default function DashboardPage() {
                 }
                 activeChannelId={selectedChannelId}
                 sheetsConfigured={sheetsConfigured}
+                lastSheetsSync={lastSheetsSync}
                 onSyncAll={handleSyncAllToSheets}
                 onImportFromSheets={handleImportFromSheets}
                 onAddManualTopic={handleAddManualTopic}
