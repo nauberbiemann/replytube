@@ -417,35 +417,37 @@ export default function DashboardPage() {
           throw new Error(data.error || 'Falha ao processar o comentário.');
         }
 
+        // Não preenche mais o campo global com o título do 1º print:
+        // isso fazia prints seguintes (de outros vídeos) herdarem o tema errado.
         const resolvedVideoTitle =
-          videoTitleRef.current.trim() || data.detectedVideoTitle || '';
-
-        if (data.detectedVideoTitle && !videoTitleRef.current.trim()) {
-          setVideoTitle(data.detectedVideoTitle);
-        }
+          data.detectedVideoTitle || videoTitleRef.current.trim() || '';
 
         const storedChs = getStoredChannels();
         const activeCh = storedChs.find((c) => c.id === selectedChannelIdRef.current);
         const channelName = activeCh?.name || currentContext.nicho || 'Canal';
 
-        const extractedList: any[] =
-          Array.isArray(data.comments) && data.comments.length > 0
-            ? data.comments
-            : [
-                {
-                  nickname: data.nickname,
-                  personName: data.personName,
-                  commentText: data.commentText,
-                  videoTitle: resolvedVideoTitle,
-                  suggestedTopic: data.suggestedTopic,
-                  reply: data.reply,
-                },
-              ];
+        const extractedList: any[] = Array.isArray(data.comments) ? data.comments : [];
 
         const newItems: CommentItem[] = [];
         const createdTopics: SavedTopic[] = [];
         let duplicateTopics = 0;
         let latestSavedTopics = getStoredTopics();
+
+        // Respostas de terceiros: não geram card, só salvam a ideia (se houver)
+        const replyTopics: any[] = Array.isArray(data.replyTopics) ? data.replyTopics : [];
+        for (const rt of replyTopics) {
+          const result = addSavedTopic({
+            channelId: selectedChannelIdRef.current || undefined,
+            channelName,
+            topicTitle: rt.suggestedTopic,
+            commentText: rt.commentText || '',
+            nickname: `${rt.nickname || 'Inscrito'} (resposta)`,
+            sourceVideoTitle: rt.videoTitle || resolvedVideoTitle,
+          });
+          latestSavedTopics = result.list;
+          if (!result.alreadyExisted) createdTopics.push(result.saved);
+          else duplicateTopics++;
+        }
 
         for (const entry of extractedList) {
           let savedTopicId: string | undefined;
@@ -495,9 +497,18 @@ export default function DashboardPage() {
         setCommentImage('');
         setFallbackText('');
 
-        const usageNote = formatUsage(data.usage, newItems.length);
+        const usageNote = formatUsage(data.usage, Math.max(newItems.length, 1));
+        const extras = [
+          replyTopics.length ? `${replyTopics.length} ideia(s) de respostas de terceiros salva(s)` : '',
+          data.skippedAnswered ? `${data.skippedAnswered} já respondido(s) pelo canal, ignorado(s)` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        if (extras) addToast(extras, 'info');
 
-        if (newItems.length > 1) {
+        if (newItems.length === 0) {
+          addToast(`Nenhum comentário novo para responder. ${usageNote}`, 'info');
+        } else if (newItems.length > 1) {
           addToast(
             `${newItems.length} comentários respondidos individualmente. ${usageNote}`,
             'success'

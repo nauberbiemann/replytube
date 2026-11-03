@@ -35,10 +35,15 @@ TAMANHO: 2 a 3 frases.
 
 PAUTA ("suggestedTopic"): só preencha se o comentário trouxer pergunta, pedido, caso real, comparação ou crítica que renda um vídeo NOVO. O tema deve refletir fielmente o que a pessoa disse, sem exagerar. Elogio simples -> "".
 
-VÁRIOS COMENTÁRIOS NO PRINT: extraia CADA comentário (de cima para baixo) como um item separado em "comments", com resposta independente. Se cada linha mostrar um vídeo diferente à direita, preencha "videoTitle" daquele item.
+VÁRIOS COMENTÁRIOS NO PRINT (YouTube Studio):
+1. VÍDEO DE CADA COMENTÁRIO: cada linha mostra, à DIREITA, a miniatura e o título do vídeo daquele comentário. Leia esse título para CADA comentário e preencha "videoTitle". A resposta de cada comentário deve tratar SOMENTE do tema do SEU vídeo — nunca misture assuntos de vídeos diferentes, mesmo que estejam no mesmo print.
+2. SÓ COMENTÁRIOS PRINCIPAIS viram resposta: crie um item em "comments" apenas para comentários de nível superior (alinhados à esquerda, com avatar grande).
+3. RESPOSTAS DE TERCEIROS (recuadas/abaixo de um comentário, de outra pessoa que não o canal): NÃO responda. Se trouxerem pergunta, pedido, caso real ou debate que renda um vídeo novo, coloque em "replyTopics"; caso contrário, ignore.
+4. Se abaixo do comentário já houver uma resposta do PRÓPRIO CANAL, marque "alreadyAnswered": true.
+5. Ignore as sugestões automáticas de resposta do YouTube (caixinhas cinzas com textos prontos).
 
 Retorne APENAS JSON:
-{"detectedVideoTitle":"título do vídeo visível no print ou vazio","comments":[{"nickname":"@usuario","personName":"Primeiro nome","commentText":"texto exato","videoTitle":"vídeo deste comentário ou vazio","suggestedTopic":"pauta ou vazio","closingStyle":"A|B|C","reply":"resposta"}]}`;
+{"detectedVideoTitle":"título do vídeo se houver só um no print, senão vazio","comments":[{"nickname":"@usuario","personName":"Primeiro nome","videoTitle":"título do vídeo DESTE comentário","commentText":"texto exato","alreadyAnswered":false,"suggestedTopic":"pauta ou vazio","closingStyle":"A|B|C","reply":"resposta sobre o tema do vídeo DESTE comentário"}],"replyTopics":[{"nickname":"@terceiro","commentText":"texto exato da resposta de terceiro","videoTitle":"vídeo","suggestedTopic":"pauta"}]}`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -100,7 +105,9 @@ ${channelDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integr
     // Bloco 3: dados variáveis (sempre no fim / mensagem do usuário)
     const hasTypedText = Boolean(commentTextFallback?.trim());
     let textInstruction = `TEMA DO VÍDEO: ${
-      videoTitle?.trim() || 'leia o título do vídeo exibido à direita do print'
+      videoTitle?.trim()
+        ? `"${videoTitle.trim()}" (use SOMENTE para comentários cujo vídeo não esteja visível no print; se o print mostrar o título ao lado do comentário, o título do print prevalece)`
+        : 'leia o título do vídeo exibido à direita de CADA comentário no print'
     }`;
     if (recentReplies && recentReplies.length > 0) {
       textInstruction += `\nÚLTIMAS RESPOSTAS (não repita abertura nem fechamento):\n${recentReplies
@@ -163,18 +170,31 @@ ${channelDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integr
       ? [parsed]
       : [];
 
-    const validComments = rawComments
+    const allComments = rawComments
       .map((c) => ({
         nickname: c.nickname || 'Espectador',
         personName: c.personName || '',
         commentText: c.commentText || commentTextFallback || '',
-        videoTitle: c.videoTitle || parsed.detectedVideoTitle || '',
+        videoTitle: c.videoTitle || parsed.detectedVideoTitle || videoTitle?.trim() || '',
         suggestedTopic: c.suggestedTopic || '',
         reply: c.reply || '',
+        alreadyAnswered: c.alreadyAnswered === true,
       }))
       .filter((c) => c.commentText.trim() || c.reply.trim());
 
-    if (validComments.length === 0) {
+    const skippedAnswered = allComments.filter((c) => c.alreadyAnswered).length;
+    const validComments = allComments.filter((c) => !c.alreadyAnswered);
+
+    const replyTopics = (Array.isArray(parsed.replyTopics) ? parsed.replyTopics : [])
+      .map((r: any) => ({
+        nickname: r.nickname || 'Inscrito',
+        commentText: r.commentText || '',
+        videoTitle: r.videoTitle || parsed.detectedVideoTitle || '',
+        suggestedTopic: (r.suggestedTopic || '').trim(),
+      }))
+      .filter((r: any) => r.suggestedTopic.length > 5);
+
+    if (validComments.length === 0 && replyTopics.length === 0 && skippedAnswered === 0) {
       return NextResponse.json(
         {
           error:
@@ -187,8 +207,10 @@ ${channelDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integr
     const usage = completion.usage as any;
 
     return NextResponse.json({
-      detectedVideoTitle: parsed.detectedVideoTitle || validComments[0].videoTitle || '',
+      detectedVideoTitle: parsed.detectedVideoTitle || '',
       comments: validComments,
+      replyTopics,
+      skippedAnswered,
       usage: {
         model,
         inputTokens: usage?.prompt_tokens ?? 0,
