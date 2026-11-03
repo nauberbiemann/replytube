@@ -22,7 +22,7 @@ const EXTRACT_PROMPT = `Você transcreve prints do YouTube Studio (aba Comentár
 
 Para CADA comentário visível, de cima para baixo:
 - nickname: o @ do autor.
-- personName: primeiro nome provável (a partir do @ ou da assinatura do texto), ou vazio.
+- personName: primeiro nome tirado do @ ou da assinatura do texto. Tente SEMPRE. Exemplos: @gusttavosantos1333 -> "Gusttavo"; @marcioorlandi -> "Marcio"; @edsonsantos1998 -> "Edson"; @belmirobeccari4818 -> "Belmiro"; @JoséRocha-t9m -> "José". Só deixe vazio se o @ claramente não contiver um nome (ex: @aguilarxxi7206, @radar_br).
 - commentText: texto exato.
 - videoTitle: título do vídeo que aparece NA MESMA LINHA, à direita (coluna "Conteúdo", ao lado da miniatura). Cada comentário pode ser de um vídeo diferente — leia o título da linha DELE. Copie o texto como aparece (pode estar cortado com "...").
 - kind:
@@ -44,7 +44,7 @@ REGRA Nº 2 — NOME: se o nome for informado, use-o na primeira frase, de forma
 
 COMO RESPONDER CADA TIPO:
 - ELOGIO / AGRADECIMENTO: cite o detalhe CONCRETO que a pessoa mencionou; acrescente informação útil SÓ se couber no tamanho. Nada de agradecimento vazio.
-- RESULTADO PESSOAL / DADO DO CARRO (ex: "Meriva 1.8 2003"): uma frase ligando o carro dela ao tema do vídeo. Sem listar cuidados.
+- RESULTADO PESSOAL / DADO DO CARRO / QUILOMETRAGEM (ex: "Ônix 2020 516 mil km", "Meriva 1.8 2003"): NADA de lição de moral nem de dica. Parabenize ou valorize o que a pessoa contou e faça uma ponte leve e simpática com o tema do vídeo. Ex. (vídeo sobre desligar o carro): "Gusttavo, 516 mil km é prova de cuidado! Esse Ônix já deve ter sido desligado incontáveis vezes do jeito certo. Cuide do seu carro, cuide do seu bolso!"
 - PERGUNTA: responda de forma direta e CORRETA para o caso exato (automático ≠ manual etc.). Se exigir mais que 2 frases, dê a dica principal e diga que vira vídeo.
 - DADO TÉCNICO / COMPLEMENTO: converse de igual para igual.
 - IRONIA OU ANALOGIA CONCORDANDO com o vídeo: NÃO rebata.
@@ -73,6 +73,19 @@ function buildChannelProfile(context: ChannelContext): string {
 - Público: ${context.publico || 'Entusiastas'} | Temas: ${(context.temasChave || []).join(', ')}
 ${context.resumo ? `- Resumo: ${context.resumo}` : ''}
 ${desc ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integralmente):\n"""\n${desc}\n"""` : ''}`;
+}
+
+// Reserva (sem tokens): se a leitura não trouxe nome, tenta achar um nome comum no início do @
+const COMMON_NAMES = 'adriana adriano alex alexandre aline ana anderson andre andrea antonio arthur augusto beatriz belmiro bruno caio camila carla carlos cesar ciro claudia claudio cristiano daniel daniela davi diego douglas edson eduardo elias emerson everson evandro fabio fabiano felipe fernanda fernando flavio francisco gabriel gilberto gilmar giovanni guilherme gustavo gusttavo helio henrique hugo igor ivan jair jefferson joao jorge jose josue julio juliana junior leandro leonardo lucas luciano luis luiz marcelo marcio marcos maria mario marta mateus mauricio mauro michel miguel milton moises murilo nelson nicolas osvaldo otavio patricia paulo pedro rafael raimundo reginaldo renato ricardo roberto rodrigo rogerio ronaldo rubens samuel sandro sergio silvio thiago tiago valter vanderlei victor vinicius vitor wagner walter washington wellington wilson'.split(' ');
+
+function guessFirstName(nickname: string): string {
+  const handle = (nickname || '')
+    .replace(/^@/, '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const match = COMMON_NAMES.filter((n) => handle.startsWith(n)).sort((a, b) => b.length - a.length)[0];
+  return match ? match.charAt(0).toUpperCase() + match.slice(1) : '';
 }
 
 type Extracted = {
@@ -204,6 +217,7 @@ export async function POST(req: NextRequest) {
     // título: o do print prevalece; o campo manual só preenche quando o print não mostra
     extracted.forEach((i) => {
       if (!i.videoTitle) i.videoTitle = manualTitle;
+      if (!i.personName) i.personName = guessFirstName(i.nickname);
     });
 
     // comentários principais já respondidos pelo canal
@@ -243,7 +257,7 @@ export async function POST(req: NextRequest) {
 
     const answers = await Promise.all(
       work.map(async (item, idx) => {
-        const firstName = (item.personName || '').trim();
+        const firstName = (item.personName || guessFirstName(item.nickname)).trim();
         // Tamanho proporcional ao comentário (decidido pelo app, não pela IA)
         const len = item.commentText.length;
         const isQuestion = item.commentText.includes('?');
@@ -262,7 +276,7 @@ Comentário de ${item.nickname}: "${item.commentText}"`
 AUTOR: ${item.nickname}${firstName ? ` — chame-o de "${firstName}" na PRIMEIRA frase` : ' — sem nome identificável, não invente nome'}
 COMENTÁRIO: "${item.commentText}"
 TAMANHO: ${size.label}.
-FECHAMENTO A USAR: ${styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
+FECHAMENTO A USAR: ${len <= 80 && !isQuestion ? 'A (bordão do canal)' : styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
 
         const completion = await openai.chat.completions.create({
           model,
