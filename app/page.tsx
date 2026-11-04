@@ -200,6 +200,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setRecentVideos(getRecentVideos(selectedChannelId || undefined));
+    setLockedVideo((prev) =>
+      prev && prev.channelId && selectedChannelId && prev.channelId !== selectedChannelId ? null : prev
+    );
   }, [selectedChannelId]);
 
   const handleLockVideo = (v: Omit<LockedVideo, 'usedAt' | 'channelId'>) => {

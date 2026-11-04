@@ -16,21 +16,36 @@ export function getRecentVideos(channelId?: string): LockedVideo[] {
   }
 }
 
-/** Salva/atualiza um vídeo na lista de recentes (máx. 15 por canal). */
+const MAX_RECENT_VIDEOS_PER_CHANNEL = 300;
+
+/** Salva/atualiza um vídeo no histórico pesquisável do canal (máx. 300 por canal). */
 export function saveRecentVideo(video: LockedVideo): LockedVideo[] {
   if (typeof window === 'undefined') return [];
   const all = getRecentVideos();
   const others = all.filter((v) => !(v.id === video.id && v.channelId === video.channelId));
-  const sameChannel = [video, ...others.filter((v) => v.channelId === video.channelId)].slice(0, 15);
+  const sameChannel = [video, ...others.filter((v) => v.channelId === video.channelId)].slice(
+    0,
+    MAX_RECENT_VIDEOS_PER_CHANNEL
+  );
   const rest = others.filter((v) => v.channelId !== video.channelId);
-  window.localStorage.setItem(RECENT_VIDEOS_KEY, JSON.stringify([...sameChannel, ...rest]));
+  try {
+    window.localStorage.setItem(RECENT_VIDEOS_KEY, JSON.stringify([...sameChannel, ...rest]));
+  } catch (err) {
+    console.error('Erro ao salvar vídeo recente no localStorage:', err);
+  }
   return getRecentVideos(video.channelId);
 }
 
 export function removeRecentVideo(id: string, channelId?: string): LockedVideo[] {
   if (typeof window === 'undefined') return [];
-  const all = getRecentVideos().filter((v) => !(v.id === id && v.channelId === channelId));
-  window.localStorage.setItem(RECENT_VIDEOS_KEY, JSON.stringify(all));
+  const all = getRecentVideos().filter(
+    (v) => !(v.id === id && (!v.channelId || !channelId || v.channelId === channelId))
+  );
+  try {
+    window.localStorage.setItem(RECENT_VIDEOS_KEY, JSON.stringify(all));
+  } catch (err) {
+    console.error('Erro ao remover vídeo recente do localStorage:', err);
+  }
   return getRecentVideos(channelId);
 }
 

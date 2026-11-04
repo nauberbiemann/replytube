@@ -9,10 +9,19 @@ import { validateAccess } from '@/lib/auth';
 function extractVideoId(url: string): string | null {
   const clean = (url || '').trim();
   if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
-  const m = clean.match(
-    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/live\/|studio\.youtube\.com\/video\/)([a-zA-Z0-9_-]{11})/
-  );
-  return m ? m[1] : null;
+  const patterns = [
+    /studio\.youtube\.com\/video\/([a-zA-Z0-9_-]{11})/i,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/i,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/i,
+    /youtube\.com\/live\/([a-zA-Z0-9_-]{11})/i,
+    /youtube\.com\/(?:v|e(?:mbed)?)\/([a-zA-Z0-9_-]{11})/i,
+    /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/i,
+  ];
+  for (const re of patterns) {
+    const m = clean.match(re);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 function cleanDescription(raw: string): string {
