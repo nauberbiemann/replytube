@@ -8,6 +8,8 @@ import { MessageSquareDashed, ChevronDown, ChevronRight } from 'lucide-react';
 interface SessionThreadProps {
   items: CommentItem[];
   onRefine: (id: string, instruction: string) => Promise<void>;
+  onUpdateReply?: (id: string, newReply: string) => void;
+  channelWebsiteUrl?: string;
   onRemoveSavedTopic?: (commentId: string, savedTopicId: string) => void;
   onManualSaveTopic?: (commentId: string, topicTitle: string) => void;
 }
@@ -15,6 +17,8 @@ interface SessionThreadProps {
 export function SessionThread({
   items,
   onRefine,
+  onUpdateReply,
+  channelWebsiteUrl,
   onRemoveSavedTopic,
   onManualSaveTopic,
 }: SessionThreadProps) {
@@ -85,6 +89,8 @@ export function SessionThread({
                         key={item.id}
                         item={item}
                         onRefine={onRefine}
+                        onUpdateReply={onUpdateReply}
+                        channelWebsiteUrl={channelWebsiteUrl}
                         onRemoveSavedTopic={onRemoveSavedTopic}
                         onManualSaveTopic={onManualSaveTopic}
                       />

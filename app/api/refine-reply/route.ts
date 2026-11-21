@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
 import { ChannelContext } from '@/lib/types';
 import { validateAccess } from '@/lib/auth';
+import { describeChannelWebsite } from '@/lib/storage';
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,6 +50,8 @@ export async function POST(req: NextRequest) {
     const compactDescription = context?.channelDescription
       ? context.channelDescription.slice(0, 6000)
       : '';
+    const site = describeChannelWebsite(context?.websiteUrl);
+    const hadUrl = /https?:\/\/\S+/i.test(previousReply || '');
 
     // Ordem para prompt caching: regras fixas -> perfil do canal -> dados variáveis no fim
     const systemPrompt = `Você é o criador do canal no YouTube ajustando sua resposta a um inscrito.
@@ -59,7 +62,19 @@ REGRAS INVIOLÁVEIS:
 3. Responda de forma CORRETA para o caso exato do comentário (não dê dica que não se aplica).
 4. PROIBIDO aberturas/fechamentos genéricos: "Fico muito feliz", "Fico feliz em saber", "Que notícia fantástica", "ponto crucial", "ótima observação", "Fala [Nome]!", "Olá [Nome]!", "Continue assim!", "Continue acompanhando a gente!", "Vamos continuar debatendo".
 5. FECHAMENTO (salvo instrução contrária): A) gancho para próximos vídeos ligado ao assunto + bordão oficial do canal (somente se existir nas diretrizes ABAIXO); B) pergunta curta e específica sobre o tema; ou C) conclusão técnica.
-6. TRADUÇÃO: se pedirem o idioma do comentário, detecte o idioma do comentário original e traduza INTEGRALMENTE com fluência nativa, adaptando o bordão do PRÓPRIO canal para esse idioma. Nenhuma frase pode ficar em português.
+6. TRADUÇÃO: se pedirem o idioma do comentário, detecte o idioma do comentário original e traduza INTEGRALMENTE com fluência nativa, adaptando o bordão do PRÓPRIO canal para esse idioma. Nenhuma frase pode ficar em português.${
+      site
+        ? `
+7. SITE / URL DO CANAL: ${site.url} (${site.pitch}).
+   - Se a instrução pedir para RETIRAR/REMOVER a URL ou o site, remova completamente qualquer menção ao site/link.
+   - Se a instrução pedir para INCLUIR a URL/site, adicione UMA frase própria e natural (antes do fechamento/bordão) convidando a buscar mais informações, testar no simulador/calculadora grátis ou conferir o guia/ferramentas em ${site.url} (escreva exatamente "${site.url}", sem barra no final e sem citar preços).
+   - Para os demais refinamentos (ex.: Mais Curto, Mais Informal, tradução): ${
+     hadUrl
+       ? `a "Resposta anterior" JÁ contém o link; MANTENHA ${site.url} em uma frase própria e natural (adaptando o texto ao idioma pedido na tradução)`
+       : 'a "Resposta anterior" NÃO contém o link (o criador optou por removê-lo); NÃO reinsira o link'
+   }.`
+        : ''
+    }
 
 Retorne APENAS JSON: { "reply": "..." }
 ${
@@ -69,6 +84,7 @@ PERFIL DO CANAL:
 - Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico e direto'}
 - Público: ${context.publico || 'Entusiastas'}
 ${context.resumo ? `- Resumo: ${context.resumo}` : ''}
+${site ? `- Site Oficial: ${site.url} (${site.pitch})` : ''}
 ${compactDescription ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL:\n"""\n${compactDescription}\n"""` : ''}`
     : ''
 }`;

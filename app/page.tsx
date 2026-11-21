@@ -278,9 +278,13 @@ export default function DashboardPage() {
       const ch = channels.find((c) => c.id === selectedChannelId);
       if (ch) {
         if (ch.cachedContext) {
-          setChannelContext({ ...ch.cachedContext, channelDescription: ch.description });
+          setChannelContext({
+            ...ch.cachedContext,
+            channelDescription: ch.description,
+            websiteUrl: ch.websiteUrl,
+          });
         } else {
-          analyzeChannel(ch.description, pass, ch.id);
+          analyzeChannel(ch.description, pass, ch.id, ch.websiteUrl);
         }
       }
     }
@@ -310,7 +314,12 @@ export default function DashboardPage() {
   }, [isLocked, appPassword]);
 
   // Analisar contexto do canal selecionado
-  const analyzeChannel = async (description: string, passOverride?: string, channelIdToCache?: string) => {
+  const analyzeChannel = async (
+    description: string,
+    passOverride?: string,
+    channelIdToCache?: string,
+    websiteUrlOverride?: string
+  ) => {
     setContextLoading(true);
     try {
       const pass = passOverride !== undefined ? passOverride : appPasswordRef.current;
@@ -333,9 +342,16 @@ export default function DashboardPage() {
         throw new Error(data.error || 'Falha ao analisar canal.');
       }
 
+      const storedCh = channelIdToCache
+        ? getStoredChannels().find((c) => c.id === channelIdToCache)
+        : undefined;
+      const resolvedWebsiteUrl =
+        websiteUrlOverride !== undefined ? websiteUrlOverride : storedCh?.websiteUrl;
+
       const ctx: ChannelContext = {
         ...data,
         channelDescription: description,
+        ...(resolvedWebsiteUrl !== undefined ? { websiteUrl: resolvedWebsiteUrl } : {}),
       };
 
       setChannelContext(ctx);
@@ -360,25 +376,38 @@ export default function DashboardPage() {
       setChannelContext({
         ...channel.cachedContext,
         channelDescription: channel.description,
+        websiteUrl: channel.websiteUrl,
       });
       return;
     }
-    analyzeChannel(channel.description, undefined, channel.id);
+    analyzeChannel(channel.description, undefined, channel.id, channel.websiteUrl);
   };
 
-  const handleCreateChannel = (name: string, description: string) => {
-    const created = createChannel(name, description);
+  const handleCreateChannel = (name: string, description: string, websiteUrl?: string) => {
+    const created = createChannel(name, description, websiteUrl);
     const updated = [...channels, created];
     setChannels(updated);
     setSelectedChannelId(created.id);
-    analyzeChannel(created.description, undefined, created.id);
+    analyzeChannel(created.description, undefined, created.id, created.websiteUrl);
   };
 
-  const handleEditChannel = (id: string, name: string, description: string) => {
-    const updated = updateChannel(id, name, description);
+  const handleEditChannel = (id: string, name: string, description: string, websiteUrl?: string) => {
+    const previous = channels.find((c) => c.id === id);
+    const descChanged = !previous || previous.description.trim() !== description.trim();
+    const updated = updateChannel(id, name, description, undefined, websiteUrl);
     setChannels(updated);
+    const edited = updated.find((c) => c.id === id);
     if (selectedChannelId === id) {
-      analyzeChannel(description, undefined, id);
+      if (!descChanged && edited?.cachedContext) {
+        setChannelContext({
+          ...edited.cachedContext,
+          channelDescription: edited.description,
+          websiteUrl: edited.websiteUrl,
+        });
+        addToast('Canal atualizado!', 'success');
+      } else {
+        analyzeChannel(description, undefined, id, edited?.websiteUrl);
+      }
     }
   };
 
@@ -625,6 +654,13 @@ export default function DashboardPage() {
     } catch (err: any) {
       addToast(err?.message || 'Erro ao refinar resposta.', 'error');
     }
+  };
+
+  const handleUpdateReply = (id: string, newReply: string) => {
+    setThreadItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, reply: newReply } : it))
+    );
+    addToast('URL removida da resposta!', 'info');
   };
 
   // Gerenciamento do Banco de Temas Salvos
@@ -1001,6 +1037,8 @@ export default function DashboardPage() {
               <SessionThread
                 items={threadItems}
                 onRefine={handleRefineReply}
+                onUpdateReply={handleUpdateReply}
+                channelWebsiteUrl={channelContext?.websiteUrl}
                 onRemoveSavedTopic={(commentId, savedId) =>
                   handleRemoveSavedTopic(savedId, commentId)
                 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
 import { ChannelContext } from '@/lib/types';
 import { validateAccess } from '@/lib/auth';
+import { describeChannelWebsite } from '@/lib/storage';
 
 /**
  * PIPELINE EM 2 ETAPAS (resolve a mistura de temas entre vídeos):
@@ -49,6 +50,7 @@ COMO RESPONDER CADA TIPO:
 - DADO TÉCNICO / COMPLEMENTO: converse de igual para igual.
 - IRONIA OU ANALOGIA CONCORDANDO com o vídeo: NÃO rebata.
 - DISCORDÂNCIA REAL: rebata com respeito e com o argumento do vídeo.
+- SITE DO CANAL (quando informado no perfil): acrescente UMA FRASE PRÓPRIA E INDEPENDENTE (separada por ponto final, logo antes do fechamento/bordão) sugerindo de forma natural e amigável buscar mais informações, usar os simuladores/calculadoras grátis ou ver o guia/ferramentas no site informado. Escreva a URL exatamente como informada, sem barra no final e sem citar preços ou vendas.
 - Nunca invente fatos, números ou promessas.
 
 PROIBIDO: "Fico muito feliz", "Fico feliz em saber", "Que notícia fantástica", "marca impressionante", "Muito obrigado pela inscrição", "Espero que tenha gostado", "ponto crucial", "ótima observação", "excelente ponto", "Fala [Nome]!", "Olá [Nome]!", "Continue assim!", "Continue acompanhando a gente!", "Vamos continuar debatendo".
@@ -68,10 +70,12 @@ Retorne APENAS JSON: {"suggestedTopic":"","reply":""}`;
 
 function buildChannelProfile(context: ChannelContext): string {
   const desc = (context.channelDescription || '').slice(0, 6000);
+  const site = describeChannelWebsite(context.websiteUrl);
   return `PERFIL DO CANAL:
 - Nicho: ${context.nicho || 'Geral'} | Tom: ${context.tomDeVoz || 'Técnico e autêntico'}
 - Público: ${context.publico || 'Entusiastas'} | Temas: ${(context.temasChave || []).join(', ')}
 ${context.resumo ? `- Resumo: ${context.resumo}` : ''}
+${site ? `- SITE OFICIAL DO CANAL: ${site.url} (${site.pitch})` : ''}
 ${desc ? `DIRETRIZES E BORDÕES OFICIAIS DO CANAL (respeite integralmente):\n"""\n${desc}\n"""` : ''}`;
 }
 
@@ -256,6 +260,7 @@ export async function POST(req: NextRequest) {
     // Cada chamada só enxerga UM comentário e o SEU vídeo: não há como "vazar" assunto de outra linha.
     // O prefixo (regras + perfil do canal) é idêntico em todas -> elegível a prompt caching.
     const systemReply = `${REPLY_RULES}\n\n${buildChannelProfile(context)}`;
+    const site = describeChannelWebsite(context.websiteUrl);
     const styles = ['A', 'B', 'C'];
     const offset = Math.floor(Math.random() * 3);
     const recent = (recentReplies || []).slice(0, 2).map((r) => `- "${r.slice(0, 140)}"`).join('\n');
@@ -266,12 +271,36 @@ export async function POST(req: NextRequest) {
         // Tamanho proporcional ao comentário (decidido pelo app, não pela IA)
         const len = item.commentText.length;
         const isQuestion = item.commentText.includes('?');
-        const size =
-          len <= 120 && !isQuestion
-            ? { words: 25, tokens: 120, label: '1 ou 2 frases curtas, MÁXIMO 25 palavras' }
-            : len <= 220
-            ? { words: 40, tokens: 180, label: '2 frases, MÁXIMO 40 palavras' }
-            : { words: 60, tokens: 260, label: 'até 3 frases, MÁXIMO 60 palavras' };
+        const isSimple = len <= 120 && !isQuestion;
+        const extraWords = site ? 16 : 0;
+        const extraTokens = site ? 50 : 0;
+        const siteSuffix = site ? ' + 1 frase do site' : '';
+        const size = isSimple
+          ? {
+              words: 25 + extraWords,
+              tokens: 120 + extraTokens,
+              label: `1 ou 2 frases curtas${siteSuffix}, MÁXIMO ${25 + extraWords} palavras`,
+            }
+          : len <= 220
+          ? {
+              words: 40 + extraWords,
+              tokens: 180 + extraTokens,
+              label: `2 frases${siteSuffix}, MÁXIMO ${40 + extraWords} palavras`,
+            }
+          : {
+              words: 60 + extraWords,
+              tokens: 260 + extraTokens,
+              label: `até 3 frases${siteSuffix}, MÁXIMO ${60 + extraWords} palavras`,
+            };
+        const siteDirective = site
+          ? `\nSITE DO CANAL (OBRIGATÓRIO INCLUIR): acrescente UMA FRASE PRÓPRIA E INDEPENDENTE (separada por ponto final, logo antes do fechamento/bordão) ${
+              isSimple
+                ? `com tom leve e convidativo (sem dar sermão) sugerindo conhecer os simuladores/calculadoras grátis ou o guia/ferramentas da bancada em ${site.url}`
+                : isQuestion
+                ? `conectando a dúvida ao conteúdo do site e sugerindo buscar mais informações, testar no simulador/calculadora grátis ou conferir o guia/ferramentas da bancada em ${site.url}`
+                : `sugerindo de forma natural e amigável buscar mais informações, testar no simulador/calculadora grátis ou ver o guia/ferramentas da bancada em ${site.url}`
+            } (escreva a URL exatamente como "${site.url}", sem barra no final e sem falar de preços/vendas).`
+          : '';
         const userText =
           item.mode === 'SOMENTE_PAUTA'
             ? `MODO: SOMENTE_PAUTA (resposta de terceiro; NÃO escreva reply)
@@ -284,8 +313,8 @@ Comentário de ${item.nickname}: "${item.commentText}"`
               }
 AUTOR: ${item.nickname}${firstName ? ` — chame-o de "${firstName}" na PRIMEIRA frase` : ' — sem nome identificável, não invente nome'}
 COMENTÁRIO: "${item.commentText}"
-TAMANHO: ${size.label}.${len <= 120 && !isQuestion ? '\nTIPO: COMENTÁRIO SIMPLES — só simpatia/amenidade, sem nenhum alerta ou ensinamento.' : ''}
-FECHAMENTO A USAR: ${len <= 120 && !isQuestion ? 'A (bordão do canal)' : styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
+TAMANHO: ${size.label}.${isSimple ? '\nTIPO: COMENTÁRIO SIMPLES — só simpatia/amenidade, sem nenhum alerta ou ensinamento.' : ''}${siteDirective}
+FECHAMENTO A USAR: ${isSimple ? 'A (bordão do canal)' : styles[(idx + offset) % 3]}${recent ? `\nNÃO repita a abertura/fechamento destas respostas recentes:\n${recent}` : ''}`;
 
         const completion = await openai.chat.completions.create({
           model,

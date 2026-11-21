@@ -13,24 +13,68 @@ import {
   Lightbulb,
   Trash2,
   Plus,
+  Link2,
+  Link2Off,
 } from 'lucide-react';
 
 interface CommentCardProps {
   item: CommentItem;
   onRefine: (id: string, instruction: string) => Promise<void>;
+  onUpdateReply?: (id: string, newReply: string) => void;
+  channelWebsiteUrl?: string;
   onRemoveSavedTopic?: (commentId: string, savedTopicId: string) => void;
   onManualSaveTopic?: (commentId: string, topicTitle: string) => void;
+}
+
+const URL_REGEX = /https?:\/\/\S+/i;
+
+function removeUrlFromReply(reply: string): string {
+  const MARKER = '__URL_TOKEN__';
+  const withToken = reply.replace(/https?:\/\/[^\s)]+/gi, (match) => {
+    const punctMatch = match.match(/([.,!?;:]+)$/);
+    const punct = punctMatch ? punctMatch[1] : '';
+    return `${MARKER}${punct}`;
+  });
+
+  const sentences = withToken.split(/(?<=[.!?])\s+/);
+  const kept = sentences.filter((s) => !s.includes(MARKER));
+  const joined = kept.join(' ').trim();
+  if (kept.length > 0 && joined.length >= 15) {
+    return joined;
+  }
+
+  const stripped = withToken
+    .replace(/\(\s*__URL_TOKEN__[^)]*\)/gi, '')
+    .replace(/[,;—–-]?\s*[^,;.!?]*__URL_TOKEN__[^.!?]*/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/([.!?]){2,}/g, '$1')
+    .replace(/^[\s,;—–-]+|[\s,;—–-]+$/g, '')
+    .trim();
+
+  if (/[A-Za-zÀ-ÿ0-9]{3}/.test(stripped)) {
+    return stripped;
+  }
+
+  return withToken
+    .replace(/__URL_TOKEN__/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 export function CommentCard({
   item,
   onRefine,
+  onUpdateReply,
+  channelWebsiteUrl,
   onRemoveSavedTopic,
   onManualSaveTopic,
 }: CommentCardProps) {
   const [copied, setCopied] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [refining, setRefining] = useState(false);
+  const hasUrl = URL_REGEX.test(item.reply);
+  const cleanWebsiteUrl = (channelWebsiteUrl || '').trim().replace(/\/+$/, '');
 
   const handleCopy = async () => {
     try {
@@ -150,29 +194,43 @@ export function CommentCard({
         {/* Lado Direito: Resposta Gerada e Refinamento */}
         <div className="flex flex-col justify-between bg-card p-4 space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-red-500 uppercase tracking-wider">
                 <Sparkles className="h-3.5 w-3.5" />
                 Resposta Sugerida
               </span>
 
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-muted shadow-2xs"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    <span className="text-emerald-500 font-semibold">Copiado!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                    Copiar
-                  </>
+              <div className="flex items-center gap-1.5">
+                {hasUrl && onUpdateReply && (
+                  <button
+                    type="button"
+                    disabled={refining}
+                    onClick={() => onUpdateReply(item.id, removeUrlFromReply(item.reply))}
+                    title="Remover a URL e a frase do site desta resposta (instantâneo, sem gastar tokens)"
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-300 transition hover:bg-amber-500/20 disabled:opacity-50 shadow-2xs"
+                  >
+                    <Link2Off className="h-3.5 w-3.5" />
+                    Retirar URL
+                  </button>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-muted shadow-2xs"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                      <span className="text-emerald-500 font-semibold">Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                      Copiar
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground rounded-lg bg-muted/30 p-3 border border-border/40 font-normal">
@@ -314,6 +372,40 @@ export function CommentCard({
               >
                 🇧🇷 PT-BR
               </button>
+              {hasUrl && onUpdateReply && (
+                <button
+                  type="button"
+                  disabled={refining}
+                  title="Remove a URL e a frase do site desta resposta sem gastar tokens"
+                  onClick={() => onUpdateReply(item.id, removeUrlFromReply(item.reply))}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/20 transition shadow-2xs disabled:opacity-50"
+                >
+                  <Link2Off className="h-3 w-3" />
+                  Retirar URL
+                </button>
+              )}
+              {!hasUrl && cleanWebsiteUrl && (
+                <button
+                  type="button"
+                  disabled={refining}
+                  title={`Inclui naturalmente o site ${cleanWebsiteUrl} na resposta`}
+                  onClick={async () => {
+                    setRefining(true);
+                    try {
+                      await onRefine(
+                        item.id,
+                        `Inclua naturalmente UMA frase própria e independente (logo antes do fechamento/bordão) convidando a buscar mais informações ou usar os recursos gratuitos em ${cleanWebsiteUrl}, escrevendo exatamente "${cleanWebsiteUrl}" sem barra no final e sem citar preços.`
+                      );
+                    } finally {
+                      setRefining(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition shadow-2xs disabled:opacity-50"
+                >
+                  <Link2 className="h-3 w-3" />
+                  Incluir URL
+                </button>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">

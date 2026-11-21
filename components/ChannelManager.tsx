@@ -10,14 +10,15 @@ import {
   CheckCircle2,
   Loader2,
   X,
+  Globe,
 } from 'lucide-react';
 
 interface ChannelManagerProps {
   channels: Channel[];
   selectedId: string;
   onSelect: (id: string) => void;
-  onCreate: (name: string, description: string) => void;
-  onEdit: (id: string, name: string, description: string) => void;
+  onCreate: (name: string, description: string, websiteUrl?: string) => void;
+  onEdit: (id: string, name: string, description: string, websiteUrl?: string) => void;
   onRemove: (id: string) => void;
   loading: boolean;
   context: ChannelContext | null;
@@ -36,6 +37,7 @@ export function ChannelManager({
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
   const [description, setDescription] = useState('');
 
   const selectedChannel = channels.find((c) => c.id === selectedId) ?? null;
@@ -43,6 +45,7 @@ export function ChannelManager({
   const handleOpenNew = () => {
     setEditingId(null);
     setName('');
+    setWebsiteUrl('');
     setDescription('');
     setModalOpen(true);
   };
@@ -50,6 +53,7 @@ export function ChannelManager({
   const handleOpenEdit = (channel: Channel) => {
     setEditingId(channel.id);
     setName(channel.name);
+    setWebsiteUrl(channel.websiteUrl || '');
     setDescription(channel.description);
     setModalOpen(true);
   };
@@ -59,9 +63,9 @@ export function ChannelManager({
     if (!name.trim() || !description.trim()) return;
 
     if (editingId) {
-      onEdit(editingId, name, description);
+      onEdit(editingId, name, description, websiteUrl.trim());
     } else {
-      onCreate(name, description);
+      onCreate(name, description, websiteUrl.trim());
     }
     setModalOpen(false);
   };
@@ -110,28 +114,42 @@ export function ChannelManager({
         </div>
 
         {selectedChannel && (
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <p className="line-clamp-2 text-xs text-muted-foreground">
-              {selectedChannel.description}
-            </p>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleOpenEdit(selectedChannel)}
-                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition"
-                title="Editar canal"
-              >
-                <Edit2 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onRemove(selectedChannel.id)}
-                className="rounded p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-500 transition"
-                title="Remover canal"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="line-clamp-2 text-xs text-muted-foreground">
+                {selectedChannel.description}
+              </p>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(selectedChannel)}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Editar canal"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemove(selectedChannel.id)}
+                  className="rounded p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-500 transition"
+                  title="Remover canal"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
+            {selectedChannel.websiteUrl && (
+              <a
+                href={selectedChannel.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/15 transition"
+                title={`Abrir ${selectedChannel.websiteUrl}`}
+              >
+                <Globe className="h-3 w-3 shrink-0" />
+                <span className="truncate">Site ativo nas respostas: {selectedChannel.websiteUrl}</span>
+              </a>
+            )}
           </div>
         )}
       </div>
@@ -223,6 +241,23 @@ export function ChannelManager({
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-red-500 shadow-2xs"
                   required
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground" htmlFor="ch-website">
+                  Site / Portal do canal (opcional)
+                </label>
+                <input
+                  id="ch-website"
+                  type="url"
+                  placeholder="Ex.: https://garage2050.vercel.app"
+                  value={websiteUrl}
+                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-red-500 shadow-2xs"
+                />
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Quando preenchido, a IA inclui naturalmente o link nas respostas convidando a buscar informações, simuladores ou guias no site.
+                </p>
               </div>
 
               <div className="space-y-1.5">

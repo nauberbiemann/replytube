@@ -49,12 +49,77 @@ export function removeRecentVideo(id: string, channelId?: string): LockedVideo[]
   return getRecentVideos(channelId);
 }
 
+export function normalizeWebsiteUrl(url?: string): string {
+  const trimmed = (url || '').trim().replace(/\/+$/, '');
+  return trimmed;
+}
+
+export function describeChannelWebsite(rawUrl?: string): { url: string; pitch: string } | null {
+  const url = normalizeWebsiteUrl(rawUrl);
+  if (!url) return null;
+  const lower = url.toLowerCase();
+  if (lower.includes('garage2050')) {
+    return {
+      url,
+      pitch:
+        'Portal Oficial da Bancada Garage 2050 — tem Simulador Grátis de Sintomas/Diagnóstico, lista de Ferramentas Testadas na bancada e o Manual/Guia de Bancada com cortes 3D e tolerâncias.',
+    };
+  }
+  if (lower.includes('radardeenergia')) {
+    return {
+      url,
+      pitch:
+        'Portal Oficial da Bancada Radar de Energia — tem Calculadoras Elétricas e Solares Grátis (12V/24V/48V, cabos DC, apagão e MPPT vs PWM), Equipamentos Testados e o Guia de Bancada com 5 Fichas ABNT.',
+    };
+  }
+  return {
+    url,
+    pitch:
+      'Site/Portal Oficial do Canal — reúne guias práticos, ferramentas e informações complementares sobre os temas dos vídeos.',
+  };
+}
+
+export function inferDefaultWebsiteUrl(channelName: string): string {
+  const norm = (channelName || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (norm.includes('garage 2050') || norm.includes('garage2050')) {
+    return 'https://garage2050.vercel.app';
+  }
+  if (norm.includes('radar de energia') || norm.includes('radardeenergia')) {
+    return 'https://radardeenergia.vercel.app';
+  }
+  return '';
+}
+
 export function getStoredChannels(): Channel[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    let changed = false;
+    const migrated: Channel[] = parsed.map((c: Channel) => {
+      if (c.websiteUrl === undefined) {
+        const inferred = inferDefaultWebsiteUrl(c.name);
+        if (inferred) {
+          changed = true;
+          return {
+            ...c,
+            websiteUrl: inferred,
+            ...(c.cachedContext
+              ? { cachedContext: { ...c.cachedContext, websiteUrl: inferred } }
+              : {}),
+          };
+        }
+      }
+      return c;
+    });
+    if (changed) {
+      saveChannels(migrated);
+    }
+    return migrated;
   } catch {
     return [];
   }
@@ -69,11 +134,13 @@ export function saveChannels(channels: Channel[]): void {
   }
 }
 
-export function createChannel(name: string, description: string): Channel {
+export function createChannel(name: string, description: string, websiteUrl?: string): Channel {
+  const normalizedUrl = normalizeWebsiteUrl(websiteUrl) || inferDefaultWebsiteUrl(name) || '';
   const newChannel: Channel = {
     id: crypto.randomUUID(),
     name: name.trim(),
     description: description.trim(),
+    websiteUrl: normalizedUrl,
     createdAt: new Date().toISOString(),
   };
   const current = getStoredChannels();
@@ -82,16 +149,29 @@ export function createChannel(name: string, description: string): Channel {
   return newChannel;
 }
 
-export function updateChannel(id: string, name: string, description: string, cachedContext?: Channel['cachedContext']): Channel[] {
+export function updateChannel(
+  id: string,
+  name: string,
+  description: string,
+  cachedContext?: Channel['cachedContext'],
+  websiteUrl?: string
+): Channel[] {
   const current = getStoredChannels();
   const updated = current.map((c) => {
     if (c.id !== id) return c;
     const descChanged = c.description !== description.trim();
+    const resolvedWebsiteUrl =
+      websiteUrl !== undefined ? normalizeWebsiteUrl(websiteUrl) : c.websiteUrl;
+    const baseCachedContext =
+      cachedContext !== undefined ? cachedContext : descChanged ? undefined : c.cachedContext;
     return {
       ...c,
       name: name.trim(),
       description: description.trim(),
-      cachedContext: cachedContext !== undefined ? cachedContext : descChanged ? undefined : c.cachedContext,
+      websiteUrl: resolvedWebsiteUrl,
+      cachedContext: baseCachedContext
+        ? { ...baseCachedContext, websiteUrl: resolvedWebsiteUrl }
+        : undefined,
     };
   });
   saveChannels(updated);

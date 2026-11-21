@@ -2,6 +2,7 @@ export interface Channel {
   id: string;
   name: string;
   description: string;
+  websiteUrl?: string;
   createdAt: string;
   cachedContext?: ChannelContext;
 }
@@ -13,6 +14,7 @@ export interface ChannelContext {
   temasChave: string[];
   resumo: string;
   channelDescription?: string;
+  websiteUrl?: string;
 }
 
 export interface CommentItem {
