@@ -24,7 +24,9 @@ const MINING_SHEET = 'Minerações';
 const MINING_HEADERS = ['ID', 'Data', 'Canal de Destino', 'Conteúdo Analisado', 'Sentimento & Insight', 'Interesse da Audiência (maior → menor)'];
 
 function doPost(e) {
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(15000);
     const body = JSON.parse(e.postData.contents);
     if (body.secret !== SECRET) return json_({ ok: false, error: 'unauthorized' });
 
@@ -78,6 +80,8 @@ function doPost(e) {
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch (ignore) {}
   }
 }
 

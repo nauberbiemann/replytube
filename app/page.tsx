@@ -16,6 +16,9 @@ import {
   getRecentVideos,
   saveRecentVideo,
   removeRecentVideo,
+  getPendingSheetTopicIds,
+  markTopicsPendingSync,
+  clearTopicsPendingSync,
 } from '@/lib/storage';
 import { optimizeImageFile } from '@/lib/image-optimizer';
 import { Header } from '@/components/Header';
@@ -96,43 +99,141 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setLastSheetsSync(localStorage.getItem('replytube_last_sheets_sync') || '');
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
   }, []);
 
-  // Sincronização com Google Sheets (não consome tokens da OpenAI; falhas não travam o app)
-  const syncToSheets = async (payload: Record<string, any>): Promise<any> => {
-    try {
-      const res = await fetch('/api/topics/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-app-password': appPasswordRef.current,
-        },
-        body: JSON.stringify(payload),
+  const syncQueueRef = useRef<Promise<any>>(Promise.resolve());
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sincronização serializada com Google Sheets + fila de pendentes (não consome tokens da OpenAI)
+  const syncToSheets = (
+    payload: Record<string, any>,
+    options: { silentOnTransient?: boolean; isRetry?: boolean } = {}
+  ): Promise<any> => {
+    const silentOnTransient = options.silentOnTransient ?? true;
+    const isRetry = options.isRetry ?? false;
+
+    let payloadToSend = payload;
+    let sentTopicIds: string[] = [];
+
+    if (payload.action === 'upsert' && Array.isArray(payload.topics)) {
+      const incomingIds = payload.topics.map((t: any) => t?.id).filter(Boolean) as string[];
+      if (incomingIds.length > 0) {
+        markTopicsPendingSync(incomingIds);
+      }
+
+      const pendingSet = new Set(getPendingSheetTopicIds());
+      const byId = new Map<string, any>();
+      payload.topics.forEach((t: any) => {
+        if (t?.id) byId.set(t.id, t);
       });
-      const data = await res.json();
-      if (data.configured === false) return null;
-      if (!data.ok) throw new Error(data.error || 'Falha na planilha');
-      const now = new Date().toISOString();
-      localStorage.setItem('replytube_last_sheets_sync', now);
-      setLastSheetsSync(now);
-      return data;
-    } catch (err: any) {
-      console.error('Sheets sync:', err);
-      addToast(`Planilha: ${err?.message || 'falha ao sincronizar'} (tema mantido no navegador).`, 'error');
-      return null;
+      if (pendingSet.size > 0) {
+        getStoredTopics().forEach((t) => {
+          if (pendingSet.has(t.id) && !byId.has(t.id)) {
+            byId.set(t.id, t);
+          }
+        });
+      }
+
+      const batchTopics = Array.from(byId.values());
+      if (batchTopics.length === 0) return Promise.resolve({ ok: true });
+      sentTopicIds = batchTopics.map((t: any) => t.id).filter(Boolean);
+      payloadToSend = { ...payload, topics: batchTopics };
     }
+
+    const run = syncQueueRef.current.catch(() => null).then(async () => {
+      let isTransient = false;
+      try {
+        const res = await fetch('/api/topics/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-app-password': appPasswordRef.current,
+          },
+          body: JSON.stringify(payloadToSend),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.configured === false) return null;
+
+        if (!res.ok || !data.ok) {
+          const isAuthError = Boolean(data?.authError);
+          isTransient =
+            !isAuthError &&
+            (res.status === 502 || res.status === 500 || Boolean(data?.transient));
+          throw new Error(data?.error || 'Falha na planilha');
+        }
+
+        if (payloadToSend.action === 'upsert' && sentTopicIds.length > 0) {
+          clearTopicsPendingSync(sentTopicIds);
+        } else if (payloadToSend.action === 'delete' && payloadToSend.id) {
+          clearTopicsPendingSync([payloadToSend.id]);
+        }
+
+        const now = new Date().toISOString();
+        localStorage.setItem('replytube_last_sheets_sync', now);
+        setLastSheetsSync(now);
+        return data;
+      } catch (err: any) {
+        console.error('Sheets sync:', err);
+        const message = err?.message || 'falha ao sincronizar';
+        const networkTransient = !err?.message || /failed to fetch|network|timeout|abort/i.test(message);
+
+        if (silentOnTransient && (isTransient || networkTransient)) {
+          if (!isRetry) {
+            if (!retryTimerRef.current) {
+              retryTimerRef.current = setTimeout(() => {
+                retryTimerRef.current = null;
+                if (payloadToSend.action === 'upsert') {
+                  const pendingIds = getPendingSheetTopicIds();
+                  if (pendingIds.length === 0) return;
+                  const idSet = new Set(pendingIds);
+                  const pendingTopics = getStoredTopics().filter((t) => idSet.has(t.id));
+                  if (pendingTopics.length > 0) {
+                    syncToSheets(
+                      { action: 'upsert', topics: pendingTopics },
+                      { silentOnTransient: true, isRetry: true }
+                    );
+                  }
+                } else {
+                  syncToSheets(payloadToSend, { silentOnTransient: true, isRetry: true });
+                }
+              }, 8000);
+            }
+          } else {
+            addToast(
+              'Planilha Google ocupada no momento — o tema está salvo e será sincronizado automaticamente na próxima tentativa.',
+              'info'
+            );
+          }
+        } else {
+          addToast(`Planilha: ${message} (tema mantido no navegador).`, 'error');
+        }
+        return null;
+      }
+    });
+
+    syncQueueRef.current = run;
+    return run;
   };
 
-  const checkSheetsConfig = async () => {
+  const checkSheetsConfig = async (): Promise<boolean> => {
     try {
       const res = await fetch('/api/topics/sync', {
         headers: { 'x-app-password': appPasswordRef.current },
       });
-      if (!res.ok) return;
+      if (!res.ok) return false;
       const data = await res.json();
-      setSheetsConfigured(Boolean(data.configured));
+      const configured = Boolean(data.configured);
+      setSheetsConfigured(configured);
+      return configured;
     } catch {
       setSheetsConfigured(false);
+      return false;
     }
   };
 
@@ -309,7 +410,22 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!isLocked) checkSheetsConfig();
+    if (!isLocked) {
+      checkSheetsConfig().then((configured) => {
+        if (!configured) return;
+        const pendingIds = getPendingSheetTopicIds();
+        if (pendingIds.length > 0) {
+          const idSet = new Set(pendingIds);
+          const pendingTopics = getStoredTopics().filter((t) => idSet.has(t.id));
+          if (pendingTopics.length > 0) {
+            syncToSheets(
+              { action: 'upsert', topics: pendingTopics },
+              { silentOnTransient: true, isRetry: true }
+            );
+          }
+        }
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocked, appPassword]);
 
@@ -745,12 +861,15 @@ export default function DashboardPage() {
   const handleSyncAllToSheets = async () => {
     const all = getStoredTopics();
     if (all.length === 0) return;
-    const data = await syncToSheets({ action: 'upsert', topics: all });
+    const data = await syncToSheets(
+      { action: 'upsert', topics: all },
+      { silentOnTransient: false }
+    );
     if (data) addToast(`${all.length} temas enviados para a planilha (abas por canal).`, 'success');
   };
 
   const handleImportFromSheets = async () => {
-    const data = await syncToSheets({ action: 'list' });
+    const data = await syncToSheets({ action: 'list' }, { silentOnTransient: false });
     if (!data?.topics) return;
     const storedChs = getStoredChannels();
     const incoming: SavedTopic[] = data.topics.map((t: any) => ({

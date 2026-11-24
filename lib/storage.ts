@@ -3,6 +3,43 @@ import { Channel, SavedTopic, LockedVideo } from './types';
 const STORAGE_KEY = 'replytube.channels';
 const TOPICS_STORAGE_KEY = 'replytube.saved_topics';
 const RECENT_VIDEOS_KEY = 'replytube.recent_videos';
+const PENDING_SHEETS_KEY = 'replytube.pending_sheets_ids';
+
+export function getPendingSheetTopicIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PENDING_SHEETS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markTopicsPendingSync(ids: string[]): void {
+  if (typeof window === 'undefined' || ids.length === 0) return;
+  try {
+    const merged = Array.from(new Set([...getPendingSheetTopicIds(), ...ids.filter(Boolean)]));
+    window.localStorage.setItem(PENDING_SHEETS_KEY, JSON.stringify(merged));
+  } catch (err) {
+    console.error('Erro ao marcar temas pendentes para planilha:', err);
+  }
+}
+
+export function clearTopicsPendingSync(ids: string[]): void {
+  if (typeof window === 'undefined' || ids.length === 0) return;
+  try {
+    const removeSet = new Set(ids);
+    const remaining = getPendingSheetTopicIds().filter((id) => !removeSet.has(id));
+    if (remaining.length === 0) {
+      window.localStorage.removeItem(PENDING_SHEETS_KEY);
+    } else {
+      window.localStorage.setItem(PENDING_SHEETS_KEY, JSON.stringify(remaining));
+    }
+  } catch (err) {
+    console.error('Erro ao limpar temas pendentes da planilha:', err);
+  }
+}
 
 export function getRecentVideos(channelId?: string): LockedVideo[] {
   if (typeof window === 'undefined') return [];
