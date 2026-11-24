@@ -161,10 +161,9 @@ export default function DashboardPage() {
         if (data.configured === false) return null;
 
         if (!res.ok || !data.ok) {
-          const isAuthError = Boolean(data?.authError);
-          isTransient =
-            !isAuthError &&
-            (res.status === 502 || res.status === 500 || Boolean(data?.transient));
+          // Em segundo plano, qualquer falha do Google (inclusive "pediu login") é tratada como
+          // oscilação: se a planilha já sincronizou antes, não é problema de permissão.
+          isTransient = res.status >= 500 || Boolean(data?.transient) || Boolean(data?.authError);
           throw new Error(data?.error || 'Falha na planilha');
         }
 

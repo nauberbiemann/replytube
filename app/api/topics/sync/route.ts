@@ -30,7 +30,20 @@ function isGoogleLoginHtml(text: string): boolean {
   return /accounts\.google\.com|ServiceLogin/i.test(text);
 }
 
-async function postToAppsScriptOnce(url: string, payload: string): Promise<ScriptCallResult> {
+function htmlTitle(text: string): string {
+  const m = text.match(/<title[^>]*>([^<]*)<\/title>/i);
+  return (m ? m[1] : text.slice(0, 120)).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Uma tentativa. Qualquer resposta não-JSON é tratada como REPETÍVEL:
+ * as páginas de erro temporário do Google também contêm links para accounts.google.com,
+ * então "parecer login" numa única tentativa não prova problema de permissão.
+ */
+async function postToAppsScriptOnce(
+  url: string,
+  payload: string
+): Promise<ScriptCallResult & { looksLikeLogin?: boolean }> {
   try {
     let currentUrl = url;
     let res = await fetch(currentUrl, {
@@ -46,17 +59,11 @@ async function postToAppsScriptOnce(url: string, payload: string): Promise<Scrip
     for (let hop = 0; hop < 5 && REDIRECT_STATUSES.has(res.status); hop++) {
       const location = res.headers.get('location');
       if (!location) break;
-
       const nextUrl = new URL(location, currentUrl).toString();
       if (isGoogleLoginUrl(nextUrl)) {
-        return {
-          ok: false,
-          authError: true,
-          error:
-            'A implantação do Google Apps Script exigiu login. Verifique se o acesso está como "Qualquer pessoa".',
-        };
+        console.error('[sheets-sync] redirect para login:', new URL(nextUrl).host);
+        return { ok: false, transient: true, status: res.status, looksLikeLogin: true };
       }
-
       currentUrl = nextUrl;
       res = await fetch(currentUrl, {
         method: 'GET',
@@ -69,20 +76,16 @@ async function postToAppsScriptOnce(url: string, payload: string): Promise<Scrip
 
     const text = await res.text();
     try {
-      const parsed = JSON.parse(text);
-      return { ok: true, parsed };
+      return { ok: true, parsed: JSON.parse(text) };
     } catch {
-      if (res.status === 401 || res.status === 403 || isGoogleLoginHtml(text)) {
-        return {
-          ok: false,
-          authError: true,
-          error:
-            'A implantação do Google Apps Script exigiu login. Verifique se o acesso está como "Qualquer pessoa".',
-        };
-      }
-      return { ok: false, transient: true, status: res.status };
+      const looksLikeLogin = res.status === 401 || res.status === 403 || isGoogleLoginHtml(text);
+      console.error(
+        `[sheets-sync] resposta não-JSON status=${res.status} host=${new URL(currentUrl).host} titulo="${htmlTitle(text)}"`
+      );
+      return { ok: false, transient: true, status: res.status, looksLikeLogin };
     }
   } catch (err: any) {
+    console.error('[sheets-sync] falha de rede:', err?.message);
     return {
       ok: false,
       transient: true,
@@ -96,25 +99,32 @@ async function callAppsScriptWithRetry(
   payloadObj: Record<string, any>
 ): Promise<ScriptCallResult> {
   const payload = JSON.stringify(payloadObj);
-  let lastResult: ScriptCallResult = { ok: false, transient: true };
+  let allLookedLikeLogin = true;
+  let lastStatus: number | undefined;
 
   for (let i = 0; i < RETRY_DELAYS_MS.length; i++) {
     const delay = RETRY_DELAYS_MS[i];
-    if (delay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
 
     const result = await postToAppsScriptOnce(url, payload);
     if (result.ok) return result;
-    if ('authError' in result && result.authError) return result;
-    lastResult = result;
+    if (!result.looksLikeLogin) allLookedLikeLogin = false;
+    if ('status' in result) lastStatus = result.status;
   }
 
+  if (allLookedLikeLogin) {
+    return {
+      ok: false,
+      authError: true,
+      error:
+        'O Google pediu login em todas as tentativas. Se persistir, confira a implantação (acesso: "Qualquer pessoa").',
+    };
+  }
   return {
     ok: false,
     transient: true,
     error: 'O Google Sheets demorou ou oscilou temporariamente.',
-    ...('status' in lastResult && lastResult.status ? { status: lastResult.status } : {}),
+    ...(lastStatus ? { status: lastStatus } : {}),
   };
 }
 
