@@ -152,8 +152,12 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { action } = body as { action: 'upsert' | 'delete' | 'list' | 'logMining' };
-    if (!['upsert', 'delete', 'list', 'logMining'].includes(action)) {
+    const { action } = body as { action: string };
+    const ALLOWED_ACTIONS = [
+      'upsert', 'delete', 'list', 'logMining',
+      'radarUpsert', 'radarList', 'queueUpsert', 'queueDelete', 'queueList',
+    ];
+    if (!ALLOWED_ACTIONS.includes(action)) {
       return NextResponse.json({ ok: false, error: 'Ação inválida.' }, { status: 400 });
     }
 

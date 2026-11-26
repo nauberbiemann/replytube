@@ -30,6 +30,8 @@ import { SavedTopicsPanel } from '@/components/SavedTopicsPanel';
 import { PasswordModal } from '@/components/PasswordModal';
 import { InsightsView } from '@/components/InsightsView';
 import { EvergreenView } from '@/components/EvergreenView';
+import { TitleRadarView } from '@/components/TitleRadarView';
+import type { AppTab } from '@/components/Header';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 interface Toast {
@@ -58,8 +60,8 @@ function formatUsage(usage: any, itemsCount = 1): string {
 
 export default function DashboardPage() {
   // Navegação de Abas
-  const [activeTab, setActiveTab] = useState<'replies' | 'insights' | 'evergreen'>('replies');
-  const activeTabRef = useRef<'replies' | 'insights' | 'evergreen'>('replies');
+  const [activeTab, setActiveTab] = useState<AppTab>('replies');
+  const activeTabRef = useRef<AppTab>('replies');
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -896,6 +898,27 @@ export default function DashboardPage() {
     addToast('Tema adicionado ao Banco de Temas!', 'success');
   };
 
+  const handleSaveTitleToTopicBank = (title: string, originalTitle: string) => {
+    const activeCh = channels.find((c) => c.id === selectedChannelId);
+    const channelName = activeCh?.name || channelContext?.nicho || 'Geral';
+    const result = addSavedTopic({
+      channelId: selectedChannelId || undefined,
+      channelName,
+      topicTitle: title,
+      commentText: originalTitle ? `Inspirado no outlier: ${originalTitle}` : '',
+      nickname: '📡 Radar de Títulos',
+      sourceVideoTitle: originalTitle,
+    });
+    setSavedTopics(result.list);
+    if (!result.alreadyExisted) syncToSheets({ action: 'upsert', topics: [result.saved] });
+    addToast(
+      result.alreadyExisted
+        ? 'Um tema parecido já existe no Banco de Temas.'
+        : `Título salvo no Banco de Temas de ${channelName}.`,
+      result.alreadyExisted ? 'info' : 'success'
+    );
+  };
+
   const handleUpdateSavedTopic = (id: string, newTitle: string) => {
     const updated = updateSavedTopicTitle(id, newTitle);
     setSavedTopics(updated);
@@ -1172,6 +1195,14 @@ export default function DashboardPage() {
             channels={channels}
             selectedChannelId={selectedChannelId}
             onSaveMinaIdeas={handleSaveMinaIdeas}
+          />
+        ) : activeTab === 'titles' ? (
+          <TitleRadarView
+            appPassword={appPassword}
+            addToast={addToast}
+            selectedModel={selectedModel}
+            channelContext={channelContext}
+            onSaveToTopicBank={handleSaveTitleToTopicBank}
           />
         ) : (
           <EvergreenView

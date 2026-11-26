@@ -1,14 +1,16 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock, MessageSquare, Gem, Sprout, Cpu } from 'lucide-react';
+import { Youtube, RefreshCw, Moon, Sun, Sparkles, Lock, MessageSquare, Gem, Sprout, Cpu, Radar } from 'lucide-react';
+
+export type AppTab = 'replies' | 'insights' | 'evergreen' | 'titles';
 
 interface HeaderProps {
   onResetCycle: () => void;
   hasPassword?: boolean;
   onLock?: () => void;
-  activeTab?: 'replies' | 'insights' | 'evergreen';
-  onTabChange?: (tab: 'replies' | 'insights' | 'evergreen') => void;
+  activeTab?: AppTab;
+  onTabChange?: (tab: AppTab) => void;
   selectedModel?: string;
   onModelChange?: (model: string) => void;
 }
@@ -137,6 +139,19 @@ export function Header({
               <span className="hidden md:inline-block rounded-full bg-teal-500/20 px-1.5 py-0.2 text-[9px] font-bold text-teal-400">
                 Viral
               </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onTabChange('titles')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                activeTab === 'titles'
+                  ? 'bg-card text-sky-500 dark:text-sky-400 shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Radar className="h-3.5 w-3.5 text-sky-400" />
+              <span>Títulos</span>
             </button>
           </div>
         )}
