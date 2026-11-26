@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateAccess } from '@/lib/auth';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
-import { NICHE_QUERIES, RADAR_NICHE_KEYS, RadarNiche, RadarVideo } from '@/lib/titleRadar';
+import {
+  ALL_NICHE_KEYS,
+  MY_NICHE_KEYS,
+  NICHE_QUERIES,
+  RADAR_NICHE_KEYS,
+  RadarNiche,
+  RadarVideo,
+  isMyNiche,
+} from '@/lib/titleRadar';
 
 /**
  * Atualiza o Radar de Títulos Outliers.
@@ -90,7 +98,7 @@ export async function POST(req: NextRequest) {
       knownIds = [],
       model: requestedModel,
     } = body as {
-      niche: RadarNiche | 'all';
+      niche: RadarNiche | 'all' | 'mine';
       days: number;
       apiKey?: string;
       cursors?: Record<string, number>;
@@ -110,19 +118,36 @@ export async function POST(req: NextRequest) {
     const publishedAfter = new Date(Date.now() - windowDays * 86400000).toISOString();
 
     // ---------- 1) search.list com sementes rotativas ----------
+    // Nichos próprios: 1ª busca em vídeos médios (4–20 min) e 2ª em longos (> 20 min),
+    // porque documentários (aviação, sobrevivência) costumam passar de 20 minutos.
     const nextCursors: Record<string, number> = { ...cursors };
-    const plan: { niche: RadarNiche; q: string }[] = [];
+    const plan: { niche: RadarNiche; q: string; duration: 'medium' | 'long' }[] = [];
     const targets: RadarNiche[] =
-      niche === 'all' ? RADAR_NICHE_KEYS : RADAR_NICHE_KEYS.includes(niche) ? [niche] : [];
+      niche === 'all'
+        ? RADAR_NICHE_KEYS
+        : niche === 'mine'
+        ? MY_NICHE_KEYS
+        : ALL_NICHE_KEYS.includes(niche)
+        ? [niche]
+        : [];
     if (targets.length === 0) {
       return NextResponse.json({ error: 'Nicho inválido.' }, { status: 400 });
     }
-    const perNiche = niche === 'all' ? 1 : 2;
+    const perNiche = niche === 'all' || niche === 'mine' ? 1 : 2;
     targets.forEach((n) => {
       const list = NICHE_QUERIES[n];
       const start = Number(cursors[n] || 0);
       for (let i = 0; i < perNiche; i++) {
-        plan.push({ niche: n, q: list[(start + i) % list.length] });
+        const duration: 'medium' | 'long' = !isMyNiche(n)
+          ? 'medium'
+          : perNiche === 2
+          ? i === 0
+            ? 'medium'
+            : 'long'
+          : start % 2 === 0
+          ? 'medium'
+          : 'long';
+        plan.push({ niche: n, q: list[(start + i) % list.length], duration });
       }
       nextCursors[n] = (start + perNiche) % list.length;
     });
@@ -139,7 +164,7 @@ export async function POST(req: NextRequest) {
             q: p.q,
             relevanceLanguage: 'en',
             regionCode: 'US',
-            videoDuration: 'medium',
+            videoDuration: p.duration,
             order: 'viewCount',
             publishedAfter,
             maxResults: '40',
@@ -188,7 +213,10 @@ export async function POST(req: NextRequest) {
         const views = Number(st.viewCount || 0);
         if (durationSec < 180 || durationSec > 4500) return;
         if ((sn.liveBroadcastContent || 'none') !== 'none') return;
-        if (BLOCKED_CATEGORIES.has(String(sn.categoryId || ''))) return;
+        const category = String(sn.categoryId || '');
+        const videoNiche = nicheById.get(v.id);
+        // Aviação: muitos canais de documentário usam a categoria "Notícias" (25)
+        if (BLOCKED_CATEGORIES.has(category) && !(category === '25' && videoNiche === 'aviation')) return;
         if (BLOCKED_REGEX.some((re) => re.test(title))) return;
         if (asciiRatio(title) < 0.88) return;
         if (views < 4000) return;

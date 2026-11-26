@@ -1,32 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateAccess } from '@/lib/auth';
 import { getOpenAIClient, getOpenAIModel } from '@/lib/openai';
-import { TONES } from '@/lib/titleRadar';
+import { LANGS, TONES } from '@/lib/titleRadar';
 
 /**
  * mode "adapt": troca de assunto em lote (lotes de 25 em paralelo).
  * mode "variations": +5 ângulos para um único título outlier.
+ * lang: idioma de saída (PT-BR, ES, FR, PL ou EN).
  */
 
 export const maxDuration = 60;
 
-const ADAPT_PROMPT = `Você é o melhor copywriter de títulos de YouTube do Brasil. Reescreva cada título em inglês mantendo 100% da ESTRUTURA PSICOLÓGICA, TENSÃO, CONTRASTE e CURIOSIDADE do original, mas trocando completamente o universo para o ASSUNTO do usuário, em PORTUGUÊS BRASILEIRO NATIVO.
+const buildAdaptPrompt = (langName: string) => `Você é o melhor copywriter de títulos de YouTube do mundo, nativo no idioma de saída. Reescreva cada título em inglês mantendo 100% da ESTRUTURA PSICOLÓGICA, TENSÃO, CONTRASTE e CURIOSIDADE do original, mas trocando completamente o universo para o ASSUNTO do usuário, em ${langName}.
 Regras:
-(1) PROIBIDO soar como tradução literal ("Aqui está o porquê", "Eu tentei fazer"). Use português vivo de grandes canais brasileiros.
+(1) PROIBIDO soar como tradução literal. Use a linguagem viva dos grandes canais desse idioma.
 (2) Mantenha números, prazos ou contrastes equivalentes que façam sentido no novo assunto.
 (3) Ideal entre 42 e 68 caracteres, com impacto logo nas primeiras palavras.
 (4) Aplique o Tom escolhido pelo usuário.
 (5) Nunca invente dados específicos falsos como se fossem fatos (prefira números plausíveis do próprio formato do título).
+(6) TODOS os títulos devem estar 100% em ${langName}, mesmo que o assunto tenha sido digitado em outro idioma.
 A "fórmula" de cada item é só apoio; a referência principal é o título original em inglês.
 Retorne APENAS JSON: {"adaptations":[{"id":"","adapted_title":""}]}`;
 
-const VARIATIONS_PROMPT = `Você é o melhor copywriter de títulos de YouTube do Brasil. A partir de UM título outlier em inglês, gere 5 títulos em PORTUGUÊS BRASILEIRO NATIVO (nada de tradução literal), cada um num ângulo diferente, todos sobre o ASSUNTO informado:
+const buildVariationsPrompt = (langName: string) => `Você é o melhor copywriter de títulos de YouTube do mundo. A partir de UM título outlier em inglês, gere 5 títulos 100% em ${langName} (nada de tradução literal), cada um num ângulo diferente, todos sobre o ASSUNTO informado:
 1. "Curiosidade Máxima"
 2. "Curto & Direto (Mobile)" — OBRIGATORIAMENTE com menos de 52 caracteres
 3. "Quebra de Crença"
 4. "Prova / Número Específico"
 5. "Alerta de Erro / Aversão à Perda"
-Mantenha a estrutura psicológica do original. Se o ASSUNTO vier vazio, mantenha o marcador literal [ASSUNTO] no lugar do tema.
+Mantenha a estrutura psicológica do original. Os nomes dos ângulos ("angle") ficam em português. Se o ASSUNTO vier vazio, mantenha o marcador literal [ASSUNTO] no lugar do tema.
 Retorne APENAS JSON: {"variations":[{"angle":"","title":""}]}`;
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -47,15 +49,19 @@ export async function POST(req: NextRequest) {
       mode = 'adapt',
       topic = '',
       tone = 'natural',
+      lang = 'pt-BR',
       items = [],
       model: requestedModel,
     } = body as {
       mode: 'adapt' | 'variations';
       topic: string;
       tone: string;
+      lang?: string;
       items: { id: string; title: string; skeleton?: string }[];
       model?: string;
     };
+
+    const langName = (LANGS.find((l) => l.key === lang) || LANGS[0]).name;
 
     const cleanTopic = String(topic || '').trim().slice(0, 120);
     const toneInfo = TONES.find((t) => t.key === tone) || TONES[0];
@@ -81,7 +87,7 @@ export async function POST(req: NextRequest) {
         max_tokens: 600,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: VARIATIONS_PROMPT },
+          { role: 'system', content: buildVariationsPrompt(langName) },
           {
             role: 'user',
             content: `ASSUNTO: ${cleanTopic || '(vazio — mantenha [ASSUNTO])'}\nTOM: ${toneInfo.label} — ${toneInfo.instruction}\nTÍTULO ORIGINAL (EN): "${item.title}"${item.skeleton ? `\nFÓRMULA (apoio): "${item.skeleton}"` : ''}`,
@@ -111,7 +117,7 @@ export async function POST(req: NextRequest) {
             max_tokens: 2400,
             response_format: { type: 'json_object' },
             messages: [
-              { role: 'system', content: ADAPT_PROMPT },
+              { role: 'system', content: buildAdaptPrompt(langName) },
               {
                 role: 'user',
                 content: `ASSUNTO DO USUÁRIO: ${cleanTopic}\nTOM: ${toneInfo.label} — ${toneInfo.instruction}\nTÍTULOS:\n${JSON.stringify(

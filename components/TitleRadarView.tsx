@@ -4,11 +4,15 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChannelContext, ScriptOutline } from '@/lib/types';
 import {
   AdaptTone,
+  LANGS,
+  MY_NICHES,
+  OutputLang,
   QueuedTitle,
   RADAR_NICHES,
   RadarNiche,
   RadarVideo,
   TONES,
+  isMyNiche,
 } from '@/lib/titleRadar';
 import { ScriptModal } from './ScriptModal';
 import { YouTubeApiKeyModal } from './YouTubeApiKeyModal';
@@ -40,6 +44,8 @@ interface TitleRadarViewProps {
 
 type SheetState = 'checking' | 'synced' | 'local' | 'outdated' | 'error';
 type SortKey = 'outlier' | 'velocity' | 'recent';
+type NicheFilter = RadarNiche | 'all' | 'mine';
+type SyncScope = 'niche' | 'mine' | 'all';
 
 const LS_RADAR = 'replytube.title_radar';
 const LS_QUEUE = 'replytube.title_queue';
@@ -68,7 +74,8 @@ function writeLS(key: string, value: unknown) {
   }
 }
 
-const cacheKey = (id: string, topic: string, tone: string) => `${id}|${topic.trim().toLowerCase()}|${tone}`;
+const cacheKey = (id: string, topic: string, tone: string, lang: string) =>
+  `${id}|${topic.trim().toLowerCase()}|${tone}|${lang}`;
 
 function compact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace('.0', '')}M`;
@@ -206,14 +213,16 @@ export function TitleRadarView({
   const [tone, setTone] = useState<AdaptTone>('natural');
   const [activeTopic, setActiveTopic] = useState('');
   const [activeTone, setActiveTone] = useState<AdaptTone>('natural');
+  const [lang, setLang] = useState<OutputLang>('pt-BR');
+  const [activeLang, setActiveLang] = useState<OutputLang>('pt-BR');
   const [adapting, setAdapting] = useState(false);
 
   const [view, setView] = useState<'radar' | 'queue'>('radar');
-  const [niche, setNiche] = useState<RadarNiche | 'all'>('all');
+  const [niche, setNiche] = useState<NicheFilter>('mine');
   const [davids, setDavids] = useState(false);
-  const [days, setDays] = useState<3 | 7 | 14 | 30>(7);
+  const [days, setDays] = useState<3 | 7 | 14 | 30>(14);
   const [sort, setSort] = useState<SortKey>('outlier');
-  const [syncing, setSyncing] = useState<'niche' | 'all' | null>(null);
+  const [syncing, setSyncing] = useState<SyncScope | null>(null);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [varOpen, setVarOpen] = useState<string | null>(null);
@@ -332,7 +341,8 @@ export function TitleRadarView({
   const visible = useMemo(() => {
     const now = Date.now();
     const list = radar.filter((v) => {
-      if (niche !== 'all' && v.niche !== niche) return false;
+      if (niche === 'mine' && !isMyNiche(v.niche)) return false;
+      if (niche !== 'all' && niche !== 'mine' && v.niche !== niche) return false;
       if (davids && v.subscribers >= 100_000) return false;
       const t = new Date(v.publishedAt).getTime();
       return !t || now - t <= days * 86400000;
@@ -346,10 +356,25 @@ export function TitleRadarView({
   }, [radar, niche, davids, days, sort]);
 
   const shown = visible.slice(0, MAX_SHOWN);
-  const missingAdapt = activeTopic ? shown.filter((v) => !adaptCache[cacheKey(v.id, activeTopic, activeTone)]) : [];
+  const missingAdapt = activeTopic
+    ? shown.filter((v) => !adaptCache[cacheKey(v.id, activeTopic, activeTone, activeLang)])
+    : [];
 
-  const nicheCount = (key: RadarNiche | 'all') =>
-    key === 'all' ? radar.length : radar.filter((v) => v.niche === key).length;
+  const nicheCount = (key: NicheFilter) =>
+    key === 'all'
+      ? radar.length
+      : key === 'mine'
+      ? radar.filter((v) => isMyNiche(v.niche)).length
+      : radar.filter((v) => v.niche === key).length;
+
+  const selectNiche = (key: NicheFilter) => {
+    setNiche(key);
+    const mine = MY_NICHES.find((n) => n.key === key);
+    if (mine) {
+      setLang(mine.defaultLang);
+      if (activeTopic) setActiveLang(mine.defaultLang);
+    }
+  };
 
   // ---------------- Ações ----------------
   const copyText = async (text: string, key: string) => {
@@ -362,10 +387,12 @@ export function TitleRadarView({
     }
   };
 
-  const runAdapt = async (topicValue: string, toneValue: AdaptTone, items: RadarVideo[]) => {
+  const runAdapt = async (topicValue: string, toneValue: AdaptTone, items: RadarVideo[], langValue: OutputLang) => {
     const t = topicValue.trim();
     if (!t) return;
-    const missing = items.filter((v) => !adaptCache[cacheKey(v.id, t, toneValue)]).slice(0, MAX_ADAPT_PER_CALL);
+    const missing = items
+      .filter((v) => !adaptCache[cacheKey(v.id, t, toneValue, langValue)])
+      .slice(0, MAX_ADAPT_PER_CALL);
     if (missing.length === 0) return;
     setAdapting(true);
     try {
@@ -376,6 +403,7 @@ export function TitleRadarView({
           mode: 'adapt',
           topic: t,
           tone: toneValue,
+          lang: langValue,
           model: selectedModel,
           items: missing.map((v) => ({ id: v.id, title: v.title, skeleton: v.skeleton })),
         }),
@@ -386,7 +414,7 @@ export function TitleRadarView({
       setAdaptCache((prev) => {
         const next = { ...prev };
         entries.forEach(([id, title]) => {
-          next[cacheKey(id, t, toneValue)] = String(title);
+          next[cacheKey(id, t, toneValue, langValue)] = String(title);
         });
         const keys = Object.keys(next);
         const trimmed =
@@ -407,14 +435,23 @@ export function TitleRadarView({
     if (!t) return;
     setActiveTopic(t);
     setActiveTone(tone);
-    runAdapt(t, tone, shown);
+    setActiveLang(lang);
+    runAdapt(t, tone, shown, lang);
   };
 
   const handleToneChange = (next: AdaptTone) => {
     setTone(next);
     if (activeTopic) {
       setActiveTone(next);
-      runAdapt(activeTopic, next, shown);
+      runAdapt(activeTopic, next, shown, activeLang);
+    }
+  };
+
+  const handleLangChange = (next: OutputLang) => {
+    setLang(next);
+    if (activeTopic) {
+      setActiveLang(next);
+      runAdapt(activeTopic, activeTone, shown, next);
     }
   };
 
@@ -423,15 +460,15 @@ export function TitleRadarView({
     setActiveTopic('');
   };
 
-  const syncRadar = async (scope: 'niche' | 'all') => {
-    if (scope === 'niche' && niche === 'all') return;
+  const syncRadar = async (scope: SyncScope) => {
+    if (scope === 'niche' && (niche === 'all' || niche === 'mine')) return;
     setSyncing(scope);
     try {
       const res = await fetch('/api/titles/radar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-app-password': appPassword },
         body: JSON.stringify({
-          niche: scope === 'all' ? 'all' : niche,
+          niche: scope === 'niche' ? niche : scope,
           days,
           apiKey: localStorage.getItem('replytube_youtube_api_key') || undefined,
           cursors,
@@ -473,7 +510,7 @@ export function TitleRadarView({
   };
 
   const loadVariations = async (v: RadarVideo) => {
-    const key = cacheKey(v.id, activeTopic, activeTone);
+    const key = cacheKey(v.id, activeTopic, activeTone, activeLang);
     if (varOpen === key) {
       setVarOpen(null);
       return;
@@ -489,6 +526,7 @@ export function TitleRadarView({
           mode: 'variations',
           topic: activeTopic,
           tone: activeTone,
+          lang: activeLang,
           model: selectedModel,
           items: [{ id: v.id, title: v.title, skeleton: v.skeleton }],
         }),
@@ -517,7 +555,7 @@ export function TitleRadarView({
       title: clean,
       status: 'Para Gravar',
       topic: activeTopic,
-      tone: activeTopic ? activeTone : '',
+      tone: activeTopic ? `${TONES.find((t) => t.key === activeTone)?.label || activeTone} · ${activeLang}` : '',
       angle,
       originalTitle: v?.title || '',
       videoId: v?.id || '',
@@ -638,6 +676,18 @@ export function TitleRadarView({
               </option>
             ))}
           </select>
+          <select
+            value={lang}
+            onChange={(e) => handleLangChange(e.target.value as OutputLang)}
+            className="rounded-lg border border-input bg-background px-2.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-sky-500"
+            title="Idioma dos títulos adaptados"
+          >
+            {LANGS.map((l) => (
+              <option key={l.key} value={l.key}>
+                {l.label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={handleSwap}
@@ -652,7 +702,7 @@ export function TitleRadarView({
           {activeTopic ? (
             <span className="text-sky-300">
               Adaptando para <strong>&ldquo;{activeTopic}&rdquo;</strong> · tom{' '}
-              {TONES.find((t) => t.key === activeTone)?.label}
+              {TONES.find((t) => t.key === activeTone)?.label} · {LANGS.find((l) => l.key === activeLang)?.label}
             </span>
           ) : (
             <span className="text-muted-foreground">
@@ -662,7 +712,7 @@ export function TitleRadarView({
           {activeTopic && missingAdapt.length > 0 && !adapting && (
             <button
               type="button"
-              onClick={() => runAdapt(activeTopic, activeTone, shown)}
+              onClick={() => runAdapt(activeTopic, activeTone, shown, activeLang)}
               className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 font-medium text-sky-300 hover:bg-sky-500/20"
             >
               Adaptar {Math.min(missingAdapt.length, MAX_ADAPT_PER_CALL)} restantes
@@ -699,21 +749,36 @@ export function TitleRadarView({
               <button
                 type="button"
                 onClick={() => syncRadar('niche')}
-                disabled={niche === 'all' || syncing !== null}
-                title={niche === 'all' ? 'Escolha um nicho para atualizar só ele' : 'Busca 2 sementes do nicho atual'}
+                disabled={niche === 'all' || niche === 'mine' || syncing !== null}
+                title={
+                  niche === 'all' || niche === 'mine'
+                    ? 'Escolha um nicho específico para atualizar só ele'
+                    : 'Busca 2 sementes do nicho atual'
+                }
                 className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
                 {syncing === 'niche' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Atualizar nicho <span className="text-muted-foreground">(~200 cota)</span>
+                Atualizar nicho <span className="text-muted-foreground">(~200)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => syncRadar('mine')}
+                disabled={syncing !== null}
+                className="inline-flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-50"
+                title="1 busca para cada um dos seus 4 nichos"
+              >
+                {syncing === 'mine' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Atualizar meus nichos <span className="opacity-70">(~400)</span>
               </button>
               <button
                 type="button"
                 onClick={() => syncRadar('all')}
                 disabled={syncing !== null}
-                className="inline-flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+                title="1 busca para cada um dos 7 nichos genéricos (fórmulas de outros mercados)"
               >
                 {syncing === 'all' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Atualizar os 7 nichos <span className="opacity-70">(~700 cota)</span>
+                7 genéricos <span className="opacity-70">(~700)</span>
               </button>
             </div>
           )}
@@ -721,12 +786,31 @@ export function TitleRadarView({
 
         {view === 'radar' && (
           <>
-            <div className="flex flex-wrap gap-1.5">
-              {[{ key: 'all' as const, label: 'Todos' }, ...RADAR_NICHES].map((n) => (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-sky-300">Meus nichos</span>
+              {[{ key: 'mine' as const, label: 'Todos os meus', channels: '' }, ...MY_NICHES].map((n) => (
                 <button
                   key={n.key}
                   type="button"
-                  onClick={() => setNiche(n.key)}
+                  onClick={() => selectNiche(n.key)}
+                  title={n.channels || 'Todos os seus nichos'}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                    niche === n.key
+                      ? 'border-sky-500/60 bg-sky-500/20 text-sky-200'
+                      : 'border-sky-500/20 bg-sky-500/5 text-sky-300/80 hover:text-sky-200'
+                  }`}
+                >
+                  {n.label} <span className="opacity-60">{nicheCount(n.key)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Genéricos</span>
+              {[{ key: 'all' as const, label: 'Tudo' }, ...RADAR_NICHES].map((n) => (
+                <button
+                  key={n.key}
+                  type="button"
+                  onClick={() => selectNiche(n.key)}
                   className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                     niche === n.key
                       ? 'border-sky-500/50 bg-sky-500/15 text-sky-300'
@@ -787,12 +871,12 @@ export function TitleRadarView({
             <Radar className="mx-auto h-8 w-8 text-sky-400" />
             <p className="text-sm font-semibold text-foreground">Radar vazio</p>
             <p className="mx-auto max-w-md text-xs text-muted-foreground">
-              Só dados reais: clique em <strong>Atualizar os 7 nichos</strong> (~700 pontos de cota do YouTube) ou escolha
-              um nicho e atualize só ele (~200). Tudo fica salvo na planilha e você navega o dia todo sem gastar cota.
+              Só dados reais: clique em <strong>Atualizar meus nichos</strong> (~400 pontos de cota do YouTube, 1 busca
+              para cada um dos seus 4 nichos). Tudo fica salvo na planilha e você navega o dia todo sem gastar cota.
             </p>
             <button
               type="button"
-              onClick={() => syncRadar('all')}
+              onClick={() => syncRadar('mine')}
               disabled={syncing !== null}
               className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
             >
@@ -801,13 +885,27 @@ export function TitleRadarView({
             </button>
           </div>
         ) : shown.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground">
-            Nenhum título com esses filtros. Aumente a janela de tempo, desligue o Davids vs Golias ou atualize o nicho.
+          <div className="rounded-xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground space-y-3">
+            <p>
+              Nenhum título com esses filtros. Aumente a janela de tempo, desligue o Davids vs Golias ou atualize
+              {niche === 'mine' ? ' os seus nichos' : niche === 'all' ? ' o radar' : ' este nicho'}.
+            </p>
+            {(niche === 'mine' || isMyNiche(niche)) && (
+              <button
+                type="button"
+                onClick={() => syncRadar(niche === 'mine' ? 'mine' : 'niche')}
+                disabled={syncing !== null}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+              >
+                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {niche === 'mine' ? 'Atualizar meus nichos (~400)' : 'Atualizar este nicho (~200)'}
+              </button>
+            )}
           </div>
         ) : (
           <div className="rounded-xl border border-border bg-card divide-y divide-border">
             {shown.map((v) => {
-              const key = cacheKey(v.id, activeTopic, activeTone);
+              const key = cacheKey(v.id, activeTopic, activeTone, activeLang);
               const adapted = activeTopic ? adaptCache[key] : '';
               const mainText = adapted || v.skeleton || v.title;
               const isOriginalOpen = originalOpen === v.id;
